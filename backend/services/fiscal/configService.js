@@ -56,8 +56,18 @@ async function getFiscalConfig() {
     'fiscal_emitente_bairro'
   ]);
 
+  if (!cfg.fiscal_ambiente) {
+    throw new Error('Ambiente fiscal não configurado. Selecione Produção ou Homologação.');
+  }
+
+  const ambienteFiscal = Number(cfg.fiscal_ambiente);
+
+  if (![1, 2].includes(ambienteFiscal)) {
+    throw new Error('Ambiente fiscal inválido. Escolha 1 Produção ou 2 Homologação.');
+  }
+
   return {
-    ambiente: Number(cfg.fiscal_ambiente || 2),
+    ambiente: ambienteFiscal,
     uf: cfg.fiscal_uf_sigla || cfg.fiscal_uf || 'CE',
     codigoUf: String(cfg.fiscal_codigo_uf || '23'),
     serie: Number(cfg.fiscal_serie || 1),

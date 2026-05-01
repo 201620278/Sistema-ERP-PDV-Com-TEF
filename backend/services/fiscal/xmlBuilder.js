@@ -189,6 +189,11 @@ function buildNfceXml({ config, venda, itens, numero }) {
     ? 'EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
     : '';
 
+  const infCplFinal = String(infAdFisco || '').trim();
+  const tagInfAdic = infCplFinal
+    ? `<infAdic><infCpl>${xmlEscape(infCplFinal)}</infCpl></infAdic>`
+    : '';
+
   let vProd = 0;
   const vDesc = round2(venda.desconto || 0);
   let vNF = 0;
@@ -201,9 +206,18 @@ function buildNfceXml({ config, venda, itens, numero }) {
     const subtotal = round2(item.subtotal != null ? item.subtotal : quantidade * valorUnitario);
     vProd += subtotal;
 
-    const ncm = padLeft(onlyDigits(item.ncm || item.produto_ncm || '00000000').slice(0, 8), 8);
+    const ncmRaw = onlyDigits(item.ncm || item.produto_ncm || '');
+    if (!ncmRaw || ncmRaw.length !== 8) {
+      throw new Error(`Produto ${item.produto_nome || item.nome || 'desconhecido'} sem NCM válido (deve ter 8 dígitos).`);
+    }
+    const ncm = ncmRaw;
     const cfop = item.cfop || '5102';
-    const cest = onlyDigits(item.cest || item.produto_cest || '');
+    const csosn = item.csosn || '102';
+    const origem = item.origem != null ? Number(item.origem) : 0;
+    const cestLimpo = onlyDigits(item.cest || item.produto_cest || item.CEST || '');
+    const tagCEST = cestLimpo.length === 7
+      ? `<CEST>${cestLimpo}</CEST>`
+      : '';
     const cEAN = obterEANFiscal(item);
     const unidade = item.unidade || 'UN';
     const xProd = Number(config.ambiente) === 2 && idx === 0
@@ -217,7 +231,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
           <cEAN>${xmlEscape(cEAN || 'SEM GTIN')}</cEAN>
           <xProd>${xmlEscape(xProd)}</xProd>
           <NCM>${ncm}</NCM>
-          ${cest ? `<CEST>${cest}</CEST>` : ''}
+          ${tagCEST}
           <CFOP>${cfop}</CFOP>
           <uCom>${xmlEscape(unidade)}</uCom>
           <qCom>${formatNumber(quantidade, 4)}</qCom>
@@ -232,8 +246,8 @@ function buildNfceXml({ config, venda, itens, numero }) {
         <imposto>
           <ICMS>
             <ICMSSN102>
-              <orig>${item.origem != null ? Number(item.origem) : 0}</orig>
-              <CSOSN>${xmlEscape(String(item.csosn || '102'))}</CSOSN>
+              <orig>${origem}</orig>
+              <CSOSN>${xmlEscape(String(csosn))}</CSOSN>
             </ICMSSN102>
           </ICMS>
           <PIS>
@@ -342,9 +356,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
     <pag>
       ${pag}
     </pag>
-    <infAdic>
-      <infCpl>${xmlEscape(infAdFisco)}</infCpl>
-    </infAdic>
+    ${tagInfAdic}
   </infNFe>
 </NFe>`;
 

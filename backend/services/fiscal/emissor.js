@@ -12,6 +12,7 @@ const {
 const { assinarNFe } = require('./signer');
 const { montarLote, enviarLote } = require('./soapClient');
 const { compactarXml } = require('./utils');
+const { validarItensFiscal } = require('./validadorFiscal');
 const { gerarDanfeHtml } = require('./danfe');
 
 console.log('EMISSOR REAL:', __filename);
@@ -158,6 +159,11 @@ async function emitirPorVendaId(vendaId) {
       status: 'configuracao_pendente',
       message: `Certificado A1/PFX não encontrado em: ${caminhoInfo}`
     };
+  }
+
+  const errosFiscais = validarItensFiscal(itens, config.ambiente);
+  if (errosFiscais.length > 0) {
+    console.warn('Avisos fiscais (homologação):', errosFiscais.join('; '));
   }
 
   const xmlBase = buildNfceXml({ config, venda, itens, numero });

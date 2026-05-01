@@ -115,7 +115,16 @@ function carregarFiscalConfig() {
         success: function(cfg) {
             const html = `
                 <div class="row">
-                    ${getFiscalField('Ambiente', 'fiscal_ambiente', cfg.ambiente || 2, '2 = homologação, 1 = produção', 'number')}
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Ambiente</label>
+                        <select class="form-control fiscal-field" id="fiscal_ambiente">
+                            <option value="">Selecione</option>
+                            <option value="2" ${Number(cfg.ambiente) === 2 ? 'selected' : ''}>2 - Homologação</option>
+                            <option value="1" ${Number(cfg.ambiente) === 1 ? 'selected' : ''}>1 - Produção</option>
+                        </select>
+                        <div class="form-text">Escolha manualmente o ambiente fiscal</div>
+                        <div id="alertaAmbiente" class="mt-2"></div>
+                    </div>
                     ${getFiscalField('UF', 'fiscal_uf_sigla', cfg.uf || 'CE')}
                     ${getFiscalField('Código UF', 'fiscal_codigo_uf', cfg.codigoUf || '23')}
                     ${getFiscalField('Série', 'fiscal_serie', cfg.serie || 1, '', 'number')}
@@ -170,6 +179,26 @@ function carregarFiscalConfig() {
             `;
 
             $('#fiscal-config-form-area').html(html);
+
+            $('#fiscal_ambiente').on('change', function () {
+                const val = $(this).val();
+
+                if (val === '1') {
+                    $('#alertaAmbiente').html(`
+                        <div class="alert alert-danger">
+                            ⚠️ Você está em PRODUÇÃO. As notas terão valor fiscal real.
+                        </div>
+                    `);
+                } else if (val === '2') {
+                    $('#alertaAmbiente').html(`
+                        <div class="alert alert-warning">
+                            🧪 Ambiente de HOMOLOGAÇÃO (teste sem valor fiscal).
+                        </div>
+                    `);
+                } else {
+                    $('#alertaAmbiente').html('');
+                }
+            }).trigger('change');
         },
         error: function(xhr) {
             $('#fiscal-config-form-area').html(`

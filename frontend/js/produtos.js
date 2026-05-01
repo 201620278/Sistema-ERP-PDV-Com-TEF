@@ -338,8 +338,247 @@ function renderRelatorioEstoqueProdutos(produtos, exibirTodos = false, filtroIni
 }
 
 
+function montarOptionsFiltroCategorias(produtos) {
+    const mapa = new Map();
+
+    (produtos || []).forEach(p => {
+        const id = String(p.categoria_id || '');
+        const nome = p.categoria || p.categoria_nome || '';
+
+        if (id && nome) {
+            mapa.set(id, nome);
+        }
+    });
+
+    return Array.from(mapa.entries())
+        .sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'))
+        .map(([id, nome]) => `<option value="${id}">${escapeHtml(nome)}</option>`)
+        .join('');
+}
+
+function aplicarFiltrosProdutos(produtos) {
+    const termo = normalizarTexto($('#buscaProduto').val()).trim();
+    const categoriaId = String($('#filtroCategoriaProduto').val() || '');
+
+    const filtrados = (produtos || []).filter(p => {
+        const bateBusca =
+            !termo ||
+            (p.nome && normalizarTexto(p.nome).includes(termo)) ||
+            (p.codigo && normalizarTexto(p.codigo).includes(termo)) ||
+            (p.categoria && normalizarTexto(p.categoria).includes(termo)) ||
+            (p.fornecedor && normalizarTexto(p.fornecedor).includes(termo));
+
+        const bateCategoria =
+            !categoriaId || String(p.categoria_id || '') === categoriaId;
+
+        return bateBusca && bateCategoria;
+    });
+
+    $('#produtos-tbody').html(renderProdutosAgrupados(filtrados));
+}
+
+function renderProdutoRow(p) {
+    return `
+        <tr>
+            <td>${escapeHtml(p.nome || '')}</td>
+            <td>${escapeHtml(p.codigo || '')}</td>
+            <td>${escapeHtml(p.categoria || p.categoria_nome || '')}</td>
+            <td>${escapeHtml(p.unidade || '')}</td>
+            <td>${formatCurrency(p.preco_compra || 0)}</td>
+            <td>${formatCurrency(p.preco_venda || 0)}</td>
+            <td>${formatarEstoqueProduto(p.estoque_atual, p.unidade)}</td>
+            <td>
+                <button class="btn btn-sm btn-info" onclick="viewProduto(${p.id})">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button class="btn btn-sm btn-warning" onclick="editProduto(${p.id})">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="deleteProduto(${p.id})">
+                    <i class="fas fa-trash"></i>
+                </button>
+                <button class="btn btn-sm btn-secondary" onclick="historicoProduto(${p.id})">
+                    <i class="fas fa-history"></i>
+                </button>
+            </td>
+        </tr>
+    `;
+}
+
+function renderProdutosAgrupados(produtos) {
+    if (!produtos || produtos.length === 0) {
+        return `
+            <tr>
+                <td colspan="8" class="text-center text-muted py-4">
+                    Nenhum produto encontrado.
+                </td>
+            </tr>
+        `;
+    }
+
+    const grupos = {};
+
+    produtos.forEach(produto => {
+        const categoria = produto.categoria || produto.categoria_nome || 'SEM CATEGORIA';
+        const subcategoria = produto.subcategoria || produto.subcategoria_nome || 'SEM SUBCATEGORIA';
+
+        if (!grupos[categoria]) {
+            grupos[categoria] = {};
+        }
+
+        if (!grupos[categoria][subcategoria]) {
+            grupos[categoria][subcategoria] = [];
+        }
+
+        grupos[categoria][subcategoria].push(produto);
+    });
+
+    let html = '';
+
+    Object.keys(grupos)
+        .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+        .forEach(categoria => {
+            html += `
+                <tr class="table-dark">
+                    <td colspan="8" style="font-weight: bold; font-size: 15px;">
+                        ${escapeHtml(categoria.toUpperCase())}
+                    </td>
+                </tr>
+            `;
+
+            Object.keys(grupos[categoria])
+                .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+                .forEach(subcategoria => {
+                    html += `
+                        <tr class="table-secondary">
+                            <td colspan="8" style="font-weight: bold; padding-left: 25px;">
+                                ${escapeHtml(subcategoria)}
+                            </td>
+                        </tr>
+                    `;
+
+                    grupos[categoria][subcategoria]
+                        .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'))
+                        .forEach(produto => {
+                            html += renderProdutoRow(produto);
+                        });
+                });
+        });
+
+    return html;
+}
+
+function gerarRelatorioEstoque() {
+    const produtosBase = window.produtosCache || [];
+
+    if (!produtosBase.length) {
+        showNotification('Nenhum produto encontrado para gerar relatório.', 'warning');
+        return;
+    }
+
+    const escolha = confirm(
+        'Deseja listar TODOS os produtos?\n\nOK = Todos os produtos\nCancelar = Apenas estoque baixo e próximo do mínimo'
+    );
+
+    const produtosRelatorio = escolha
+        ? produtosBase
+        : produtosBase.filter(p => {
+            const estoque = Number(p.estoque_atual || 0);
+            const minimo = Number(p.estoque_minimo || 0);
+
+            if (minimo <= 0) return false;
+
+            return estoque <= minimo || estoque <= minimo + 3;
+        });
+
+    if (!produtosRelatorio.length) {
+        showNotification('Nenhum produto com estoque baixo ou próximo do mínimo.', 'success');
+        return;
+    }
+
+    const linhas = produtosRelatorio.map(p => {
+        const estoque = Number(p.estoque_atual || 0);
+        const minimo = Number(p.estoque_minimo || 0);
+
+        let status = 'OK';
+
+        if (minimo > 0 && estoque <= minimo) {
+            status = 'ESTOQUE BAIXO';
+        } else if (minimo > 0 && estoque <= minimo + 3) {
+            status = 'PRÓXIMO DO MÍNIMO';
+        }
+
+        return `
+            <tr>
+                <td>${escapeHtml(p.nome || '')}</td>
+                <td>${escapeHtml(p.codigo || '')}</td>
+                <td>${escapeHtml(p.categoria || p.categoria_nome || '')}</td>
+                <td>${escapeHtml(p.subcategoria || p.subcategoria_nome || '')}</td>
+                <td>${escapeHtml(p.unidade || '')}</td>
+                <td>${estoque}</td>
+                <td>${minimo}</td>
+                <td>${formatCurrency(p.preco_compra || 0)}</td>
+                <td>${formatCurrency(p.preco_venda || 0)}</td>
+                <td><strong>${status}</strong></td>
+            </tr>
+        `;
+    }).join('');
+
+    const janela = window.open('', '_blank', 'width=1100,height=700');
+
+    janela.document.write(`
+        <html>
+        <head>
+            <title>Relatório de Estoque</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                h2 { margin-bottom: 5px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+                th, td { border: 1px solid #ccc; padding: 8px; font-size: 12px; }
+                th { background: #f2f2f2; }
+            </style>
+        </head>
+        <body>
+            <h2>Relatório de Estoque</h2>
+            <small>Gerado em: ${new Date().toLocaleString('pt-BR')}</small>
+            <p>
+                <strong>Modo:</strong>
+                ${escolha ? 'Todos os produtos' : 'Estoque baixo e próximo do mínimo'}
+            </p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Produto</th>
+                        <th>Código</th>
+                        <th>Categoria</th>
+                        <th>Subcategoria</th>
+                        <th>Unidade</th>
+                        <th>Estoque Atual</th>
+                        <th>Estoque Mínimo</th>
+                        <th>Preço Compra</th>
+                        <th>Preço Venda</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${linhas}
+                </tbody>
+            </table>
+
+            <script>
+                window.print();
+            </script>
+        </body>
+        </html>
+    `);
+
+    janela.document.close();
+}
+
 // Renderiza listagem de produtos
 function renderProdutos(produtos) {
+    window.produtosCache = produtos;
     const html = `
         <div class="card">
             <div class="card-header">
@@ -347,19 +586,31 @@ function renderProdutos(produtos) {
                     <div class="col-md-6">
                         <i class="fas fa-box"></i> Lista de Produtos
                     </div>
-                    <div class="col-md-6 text-end">
-                        <input
-                            type="text"
-                            class="form-control form-control-sm d-inline-block w-auto me-2"
-                            id="buscaProduto"
-                            placeholder="Buscar produto..."
-                        >
-                        <button class="btn btn-secondary btn-sm me-2" onclick="showRelatorioEstoqueProdutos()">
-                            <i class="fas fa-chart-bar"></i> Relatório de estoque
+                    <div class="col-md-8 d-flex justify-content-end align-items-center gap-2 flex-wrap">
+                        <button class="btn btn-secondary btn-sm" onclick="gerarRelatorioEstoque()">
+                            <i class="fas fa-list"></i> Relatório de estoque
                         </button>
-                        <button class="btn btn-primary btn-sm" onclick="showProdutoModal()">
+
+                        <button class="btn btn-primary btn-sm" onclick="openProdutoModal()">
                             <i class="fas fa-plus"></i> Novo Produto
                         </button>
+
+                        <select
+                            class="form-select form-select-sm"
+                            id="filtroCategoriaProduto"
+                            style="width: 200px;"
+                        >
+                            <option value="">Todas as categorias</option>
+                            ${montarOptionsFiltroCategorias(produtos)}
+                        </select>
+
+                        <input
+                            type="text"
+                            class="form-control form-control-sm"
+                            id="buscaProduto"
+                            placeholder="Buscar produto..."
+                            style="width: 200px;"
+                        >
                     </div>
                 </div>
             </div>
@@ -380,7 +631,7 @@ function renderProdutos(produtos) {
                             </tr>
                         </thead>
                         <tbody id="produtos-tbody">
-                            ${renderProdutosRows(produtos)}
+                            ${renderProdutosAgrupados(produtos)}
                         </tbody>
                     </table>
                 </div>
@@ -390,17 +641,8 @@ function renderProdutos(produtos) {
 
     $('#page-content').html(html);
 
-    $('#buscaProduto').on('input', function () {
-        const termo = normalizarTexto($(this).val()).trim();
-
-        const filtrados = produtos.filter(p =>
-            (p.nome && normalizarTexto(p.nome).includes(termo)) ||
-            (p.codigo && normalizarTexto(p.codigo).includes(termo)) ||
-            (p.categoria && normalizarTexto(p.categoria).includes(termo)) ||
-            (p.fornecedor && normalizarTexto(p.fornecedor).includes(termo))
-        );
-
-        $('#produtos-tbody').html(renderProdutosRows(filtrados));
+    $('#buscaProduto, #filtroCategoriaProduto').on('input change', function () {
+        aplicarFiltrosProdutos(produtos);
     });
 }
 
@@ -1250,7 +1492,7 @@ function viewProduto(id) {
                                 <p><strong>Unidade:</strong> ${escapeHtml(produtoNormalizado.unidade || '-')}</p>
                                 <p><strong>Preço de Compra:</strong> ${formatCurrency(produtoNormalizado.preco_compra || 0)}</p>
                                 <p><strong>Preço de Venda:</strong> ${formatCurrency(produtoNormalizado.preco_venda || 0)}</p>
-                                <p><strong>Estoque Atual:</strong> ${Number(produtoNormalizado.estoque_atual || 0)}</p>
+                                <p><strong>Estoque Atual:</strong> ${formatarEstoqueProduto(produtoNormalizado.estoque_atual, produtoNormalizado.unidade)}</p>
                                 <p><strong>Estoque Mínimo:</strong> ${Number(produtoNormalizado.estoque_minimo || 0)}</p>
                                 <p><strong>Fornecedor:</strong> ${escapeHtml(produtoNormalizado.fornecedor || '-')}</p>
                             </div>
@@ -1281,4 +1523,15 @@ function escapeHtml(text) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+function formatarEstoqueProduto(valor, unidade = '') {
+    const numero = Number(valor || 0);
+    const unidadeNormalizada = String(unidade || '').toUpperCase();
+
+    if (unidadeNormalizada === 'KG') {
+        return `${numero.toFixed(3)} kg`;
+    }
+
+    return `${numero.toFixed(0)} ${unidade || 'UN'}`;
 }
