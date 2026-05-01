@@ -14,15 +14,12 @@ const { montarLote, enviarLote } = require('./soapClient');
 const { compactarXml } = require('./utils');
 const { validarItensFiscal } = require('./validadorFiscal');
 const { gerarDanfeHtml } = require('./danfe');
+const { getFiscalSubDir } = require('./paths');
 
 console.log('EMISSOR REAL:', __filename);
 
 function salvarDebug(nome, conteudo) {
-  const pasta = path.join(__dirname, 'debug');
-  if (!fs.existsSync(pasta)) {
-    fs.mkdirSync(pasta, { recursive: true });
-  }
-
+  const pasta = getFiscalSubDir('debug');
   fs.writeFileSync(path.join(pasta, nome), String(conteudo ?? ''), 'utf8');
 }
 

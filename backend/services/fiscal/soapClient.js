@@ -3,12 +3,10 @@ const path = require('path');
 const axios = require('axios');
 const https = require('https');
 const { carregarCertificadoPfx } = require('./certificateService');
+const { getFiscalSubDir } = require('./paths');
 
 function salvarDebug(nome, conteudo) {
-  const pasta = path.join(__dirname, 'debug');
-  if (!fs.existsSync(pasta)) {
-    fs.mkdirSync(pasta, { recursive: true });
-  }
+  const pasta = getFiscalSubDir('debug');
   fs.writeFileSync(path.join(pasta, nome), conteudo, 'utf8');
 }
 

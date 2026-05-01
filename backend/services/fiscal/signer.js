@@ -1,16 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { SignedXml } = require('xml-crypto');
+const { getFiscalSubDir } = require('./paths');
 
 console.log('SIGNER REAL:', __filename);
 
 function salvarDebug(nome, conteudo) {
-  const pasta = path.join(__dirname, '../../../storage/xml/debug-assinatura');
-
-  if (!fs.existsSync(pasta)) {
-    fs.mkdirSync(pasta, { recursive: true });
-  }
-
+  const pasta = getFiscalSubDir('xml/debug-assinatura');
   fs.writeFileSync(path.join(pasta, nome), String(conteudo ?? ''), 'utf8');
 }
 

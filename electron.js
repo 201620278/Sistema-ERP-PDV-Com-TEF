@@ -20,6 +20,22 @@ function garantirDiretorioBanco() {
 
   process.env.DB_DIR = dbDir;
   console.log('DB_DIR definido para:', process.env.DB_DIR);
+
+  const fiscalDir = path.join(dbDir, 'fiscal');
+
+  if (!fs.existsSync(fiscalDir)) {
+    fs.mkdirSync(fiscalDir, { recursive: true });
+  }
+
+  ['xml', 'danfe', 'debug', 'certificados'].forEach(sub => {
+    const dir = path.join(fiscalDir, sub);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  });
+
+  process.env.FISCAL_DIR = fiscalDir;
+  console.log('FISCAL_DIR definido para:', process.env.FISCAL_DIR);
 }
 
 function esperarServidor(url, timeout = 15000) {

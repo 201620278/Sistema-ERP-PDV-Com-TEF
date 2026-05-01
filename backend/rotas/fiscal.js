@@ -7,12 +7,9 @@ const multer = require('multer');
 const { getFiscalConfig, setConfiguracao } = require('../services/fiscal/configService');
 const { carregarCertificadoPfx } = require('../services/fiscal/certificateService');
 const { emitirPorVendaId } = require('../services/fiscal/emissor');
+const { getFiscalSubDir } = require('../services/fiscal/paths');
 
-const pastaCertificados = path.resolve(__dirname, '../certificados');
-
-if (!fs.existsSync(pastaCertificados)) {
-  fs.mkdirSync(pastaCertificados, { recursive: true });
-}
+const pastaCertificados = getFiscalSubDir('certificados');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
