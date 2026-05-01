@@ -54,7 +54,7 @@ function renderCompras(compras) {
                                     <td>${c.parcelas_pendentes || 0}</td>
                                     <td>
                                         <button class="btn btn-sm btn-info" onclick="viewCompra(${c.id})"><i class="fas fa-eye"></i></button>
-                                        <button class="btn btn-sm btn-danger" onclick="deleteCompra(${c.id})"><i class="fas fa-trash"></i></button>
+                                        <button class="btn btn-sm btn-warning" onclick="cancelarCompra(${c.id})"><i class="fas fa-ban"></i></button>
                                     </td>
                                 </tr>
                             `).join('') || '<tr><td colspan="8" class="text-center">Nenhuma compra registrada.</td></tr>'}
@@ -193,6 +193,14 @@ function normalizeItemCompra(item = {}) {
         ultimo_preco_compra: Number(ultimoPrecoCompra.toFixed(2)),
         margem_lucro: Number(margem.toFixed(2)),
         preco_venda_sugerido: Number(precoVenda.toFixed(2)),
+        vendido_por_peso: Number(item.vendido_por_peso || 0),
+        peso_total_compra: Number(item.peso_total_compra || item.quantidade || 0),
+        custo_por_kg: Number(item.custo_por_kg || custo || 0),
+        atualizar_preco_venda: Number(item.atualizar_preco_venda ?? 1),
+        frete_rateado: Number(item.frete_rateado || 0),
+        desconto_rateado: Number(item.desconto_rateado || 0),
+        outras_despesas_rateado: Number(item.outras_despesas_rateado || 0),
+        custo_unitario_final: Number(item.custo_unitario_final || custo || 0),
         subtotal: Number((quantidade * custo).toFixed(2))
     };
 }
@@ -227,6 +235,22 @@ function recalcularTotaisCompraNota() {
     $('#valor_produtos').val(formatNumberInput(valorProdutos));
     $('#valor_total_nota').val(formatNumberInput(totalNota));
     $('#totalCompra').text(formatCurrency(totalNota));
+
+    const totalXml = Number($('#valor_total_nota').val()) || totalNota;
+    const diferenca = Number((totalXml - totalNota).toFixed(2));
+
+    $('#conferencia_total_compra').remove();
+
+    let classe = Math.abs(diferenca) <= 0.05 ? 'alert-success' : 'alert-warning';
+    let texto = Math.abs(diferenca) <= 0.05
+        ? 'Conferência OK: total dos itens bate com o total da nota.'
+        : `Atenção: diferença entre XML e itens: ${formatCurrency(diferenca)}. Verifique frete, desconto ou despesas.`;
+
+    $('#valor_total_nota').closest('.row').after(`
+      <div class="col-12 mt-2" id="conferencia_total_compra">
+        <div class="alert ${classe} py-2 mb-0">${texto}</div>
+      </div>
+    `);
 }
 
 function removerItemCompra(index) {
@@ -249,9 +273,24 @@ function renderItensCompraTabela() {
             </td>
             <td style="min-width:120px;">${escapeHtml(item.codigo_barras || '')}</td>
             <td style="min-width:90px;">${formatNumberInput(item.quantidade)}</td>
-            <td style="min-width:110px;">${formatCurrency(item.preco_unitario)}</td>
+            <td style="min-width:110px;">
+              ${formatCurrency(item.preco_unitario)}
+              ${item.custo_unitario_final && Number(item.custo_unitario_final) !== Number(item.preco_unitario)
+                ? `<br><small class="text-muted">Custo final: ${formatCurrency(item.custo_unitario_final)}</small>` 
+                : ''}
+            </td>
             <td style="min-width:95px;">${formatNumberInput(item.margem_lucro)}%</td>
-            <td style="min-width:110px;">${formatCurrency(item.preco_venda_sugerido)}</td>
+            <td style="min-width:110px;">
+              ${formatCurrency(item.preco_venda_sugerido)}
+              <br>
+              <small>
+                <label>
+                  <input type="checkbox" ${Number(item.atualizar_preco_venda ?? 1) === 1 ? 'checked' : ''}
+                    onchange="itensCompraAtual[${index}].atualizar_preco_venda = this.checked ? 1 : 0">
+                  Atualizar preço
+                </label>
+              </small>
+            </td>
             <td>${formatCurrency(item.subtotal)}</td>
             <td>
                 <button class="btn btn-sm btn-warning me-1" onclick="editarItemCompra(${index})"><i class="fas fa-edit"></i></button>
@@ -722,6 +761,13 @@ function saveCompra() {
         data_emissao: $('#data_emissao').val(),
         data_entrada: $('#data_entrada').val(),
         fornecedor: $('#fornecedor').val(),
+        fornecedor_cnpj: compraImportadaXml?.fornecedor_cnpj || '',
+        fornecedor_rua: compraImportadaXml?.fornecedor_rua || '',
+        fornecedor_numero: compraImportadaXml?.fornecedor_numero || '',
+        fornecedor_bairro: compraImportadaXml?.fornecedor_bairro || '',
+        fornecedor_cidade: compraImportadaXml?.fornecedor_cidade || '',
+        fornecedor_uf: compraImportadaXml?.fornecedor_uf || '',
+        fornecedor_cep: compraImportadaXml?.fornecedor_cep || '',
         numero_nf: $('#numero_nf').val().trim(),
         serie_nf: $('#serie_nf').val().trim(),
         modelo_nf: $('#modelo_nf').val().trim() || '55',
@@ -742,7 +788,11 @@ function saveCompra() {
             preco_unitario: Number(item.preco_unitario || 0),
             margem_lucro: Number(item.margem_lucro || 0),
             preco_venda_sugerido: Number(item.preco_venda_sugerido || 0),
-            subtotal: Number(item.subtotal || 0)
+            subtotal: Number(item.subtotal || 0),
+            vendido_por_peso: Number(item.vendido_por_peso || 0),
+            peso_total_compra: Number(item.peso_total_compra || item.quantidade || 0),
+            custo_por_kg: Number(item.custo_por_kg || item.preco_unitario || 0),
+            atualizar_preco_venda: Number(item.atualizar_preco_venda ?? 1)
         })),
         condicao_pagamento: condicaoPagamento,
         forma_pagamento: $('#forma_pagamento').val(),
@@ -847,13 +897,22 @@ function viewCompra(id) {
     });
 }
 
-function deleteCompra(id) {
-    if (!confirm('Deseja excluir esta compra? O estoque e o financeiro serão ajustados.')) return;
-    $.ajax({ url: `${API_URL}/compras/${id}`, method: 'DELETE' }).done(function() {
-        showNotification('Compra excluída com sucesso!', 'success');
+function cancelarCompra(id) {
+    const motivo = prompt('Informe o motivo do cancelamento da compra:', 'Cancelamento manual');
+    if (!motivo) return;
+
+    if (!confirm('Confirmar cancelamento? O sistema vai baixar o estoque e cancelar o financeiro desta compra.')) return;
+
+    $.ajax({
+        url: `${API_URL}/compras/${id}/cancelar`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ motivo })
+    }).done(function() {
+        showNotification('Compra cancelada com sucesso!', 'success');
         loadCompras();
     }).fail(function(xhr) {
-        showNotification(xhr.responseJSON?.error || 'Erro ao excluir compra.', 'danger');
+        showNotification(xhr.responseJSON?.error || 'Erro ao cancelar compra.', 'danger');
     });
 }
 

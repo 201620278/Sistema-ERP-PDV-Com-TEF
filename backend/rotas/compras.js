@@ -45,6 +45,77 @@ function createSlugCodigo(nome = '') {
     .toUpperCase();
 }
 
+function moeda(value) {
+  const numero = Number(value || 0);
+  return Number.isFinite(numero) ? Math.round(numero * 100) / 100 : 0;
+}
+
+function calcularRateioItens(itens, totais = {}) {
+  const valorProdutos = moeda(
+    itens.reduce((sum, item) => sum + moeda(item.subtotal), 0)
+  );
+
+  const frete = moeda(totais.valor_frete);
+  const desconto = moeda(totais.valor_desconto);
+  const outras = moeda(totais.valor_outras_despesas);
+
+  return itens.map((item) => {
+    const subtotal = moeda(item.subtotal);
+    const proporcao = valorProdutos > 0 ? subtotal / valorProdutos : 0;
+
+    const freteRateado = moeda(frete * proporcao);
+    const descontoRateado = moeda(desconto * proporcao);
+    const outrasRateado = moeda(outras * proporcao);
+
+    const quantidade = Number(item.quantidade || 0);
+    const custoTotalFinal = moeda(subtotal + freteRateado + outrasRateado - descontoRateado);
+    const custoUnitarioFinal = quantidade > 0 ? moeda(custoTotalFinal / quantidade) : moeda(item.preco_unitario);
+
+    return {
+      ...item,
+      frete_rateado: freteRateado,
+      desconto_rateado: descontoRateado,
+      outras_despesas_rateado: outrasRateado,
+      custo_unitario_final: custoUnitarioFinal
+    };
+  });
+}
+
+function garantirFornecedorCompra(dados, callback) {
+  const nome = String(dados.fornecedor || '').trim();
+  const cnpj = digitsOnly(dados.fornecedor_cnpj || '');
+
+  if (!nome) return callback(null);
+
+  if (!cnpj) return callback(null);
+
+  db.get(`
+    SELECT id FROM fornecedores 
+    WHERE REPLACE(REPLACE(REPLACE(REPLACE(cpf_cnpj, '.', ''), '/', ''), '-', ''), ' ', '') = ?
+    LIMIT 1
+  `, [cnpj], (err, existente) => {
+    if (err) return callback(err);
+    if (existente) return callback(null);
+
+    db.run(`
+      INSERT INTO fornecedores (
+        nome, razao_social, cpf_cnpj, rua, numero, bairro, cidade, uf, cep, observacoes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      nome,
+      nome,
+      cnpj,
+      dados.fornecedor_rua || null,
+      dados.fornecedor_numero || null,
+      dados.fornecedor_bairro || null,
+      dados.fornecedor_cidade || null,
+      dados.fornecedor_uf || null,
+      dados.fornecedor_cep || null,
+      'Fornecedor cadastrado automaticamente pela importação de XML de compra.'
+    ], callback);
+  });
+}
+
 function criarFinanceiroCompra(compra, callback) {
   const {
     id,
@@ -225,8 +296,10 @@ function processarItensCompra(compraId, itens, fornecedor, done) {
         db.run(`
           INSERT INTO compras_itens (
             compra_id, produto_id, quantidade, preco_unitario, subtotal,
-            descricao_produto, codigo_barras, margem_lucro, preco_venda_sugerido, unidade, ncm
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            descricao_produto, codigo_barras, margem_lucro, preco_venda_sugerido, unidade, ncm,
+            frete_rateado, desconto_rateado, outras_despesas_rateado, custo_unitario_final,
+            vendido_por_peso, peso_total_compra, custo_por_kg, atualizar_preco_venda
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           compraId,
           produtoId,
@@ -238,7 +311,15 @@ function processarItensCompra(compraId, itens, fornecedor, done) {
           Number(item.margem_lucro || 30),
           Number(item.preco_venda_sugerido || 0),
           item.unidade || 'UN',
-          item.ncm || null
+          item.ncm || null,
+          Number(item.frete_rateado || 0),
+          Number(item.desconto_rateado || 0),
+          Number(item.outras_despesas_rateado || 0),
+          Number(item.custo_unitario_final || item.preco_unitario || 0),
+          Number(item.vendido_por_peso || 0),
+          Number(item.peso_total_compra || 0),
+          Number(item.custo_por_kg || 0),
+          Number(item.atualizar_preco_venda ?? 1)
         ], (insertErr) => {
           if (insertErr) return done(insertErr);
 
@@ -246,21 +327,44 @@ function processarItensCompra(compraId, itens, fornecedor, done) {
             UPDATE produtos
             SET estoque_atual = estoque_atual + ?,
                 preco_compra = ?,
-                preco_venda = ?,
-                lucro_percentual = ?,
+                preco_venda = CASE WHEN ? = 1 THEN ? ELSE preco_venda END,
+                lucro_percentual = CASE WHEN ? = 1 THEN ? ELSE lucro_percentual END,
                 fornecedor = COALESCE(?, fornecedor),
                 ncm = COALESCE(?, ncm),
                 codigo_barras = COALESCE(?, codigo_barras),
+                unidade = COALESCE(?, unidade),
+                vendido_por_peso = CASE WHEN ? = 1 THEN 1 ELSE COALESCE(vendido_por_peso, 0) END,
+                peso_total_compra = CASE WHEN ? = 1 THEN ? ELSE COALESCE(peso_total_compra, 0) END,
+                valor_total_compra = CASE WHEN ? = 1 THEN ? ELSE COALESCE(valor_total_compra, 0) END,
+                custo_por_kg = CASE WHEN ? = 1 THEN ? ELSE COALESCE(custo_por_kg, 0) END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
           `, [
             Number(item.quantidade || 0),
-            Number(item.preco_unitario || 0),
+            Number(item.custo_unitario_final || item.preco_unitario || 0),
+
+            Number(item.atualizar_preco_venda ?? 1),
             Number(item.preco_venda_sugerido || 0),
+
+            Number(item.atualizar_preco_venda ?? 1),
             Number(item.margem_lucro || 30),
+
             fornecedor || null,
             item.ncm || null,
             item.codigo_barras || null,
+            item.unidade || 'UN',
+
+            Number(item.vendido_por_peso || 0),
+
+            Number(item.vendido_por_peso || 0),
+            Number(item.peso_total_compra || item.quantidade || 0),
+
+            Number(item.vendido_por_peso || 0),
+            Number(item.subtotal || 0),
+
+            Number(item.vendido_por_peso || 0),
+            Number(item.custo_por_kg || item.custo_unitario_final || item.preco_unitario || 0),
+
             produtoId
           ], (upErr) => {
             if (upErr) return done(upErr);
@@ -324,6 +428,13 @@ router.post('/', (req, res) => {
     data_emissao,
     data_entrada,
     fornecedor,
+    fornecedor_cnpj,
+    fornecedor_rua,
+    fornecedor_numero,
+    fornecedor_bairro,
+    fornecedor_cidade,
+    fornecedor_uf,
+    fornecedor_cep,
     numero_nf,
     serie_nf,
     modelo_nf,
@@ -357,122 +468,262 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'A chave de acesso da NF deve ter 44 dígitos.' });
   }
 
+  const totalItensCalculado = moeda(
+    itens.reduce((sum, item) => sum + moeda(item.subtotal), 0)
+  );
+
+  const totalCalculadoComAjustes = moeda(
+    totalItensCalculado - Number(valor_desconto || 0) + Number(valor_frete || 0) + Number(valor_outras_despesas || 0)
+  );
+
+  const totalXml = moeda(valor_total_nota || totalNum);
+  const diferencaTotal = moeda(totalXml - totalCalculadoComAjustes);
+
+  const itensComRateio = calcularRateioItens(itens, {
+    valor_frete,
+    valor_desconto,
+    valor_outras_despesas
+  });
+
   const condicao = condicao_pagamento || 'avista';
   const qtdParcelas = Math.max(1, Number(parcelas) || 1);
 
-  db.serialize(() => {
-    db.run('BEGIN TRANSACTION');
-    db.run(`
-      INSERT INTO compras (
-        data_compra, data_emissao, data_entrada, fornecedor, numero_nf, serie_nf, modelo_nf, chave_acesso,
-        valor_produtos, valor_desconto, valor_frete, valor_outras_despesas, valor_total_nota, total, status,
-        condicao_pagamento, forma_pagamento, data_vencimento, parcelas, valor_entrada, observacao
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'concluida', ?, ?, ?, ?, ?, ?)
-    `, [
-      data_compra,
-      data_emissao || null,
-      data_entrada || null,
-      fornecedor || null,
-      numero_nf || null,
-      serie_nf || null,
-      modelo_nf || null,
-      chave_acesso || null,
-      Number(valor_produtos) || 0,
-      Number(valor_desconto) || 0,
-      Number(valor_frete) || 0,
-      Number(valor_outras_despesas) || 0,
-      Number(valor_total_nota) || totalNum,
-      Number(valor_total_nota) || totalNum,
-      condicao,
-      forma_pagamento || null,
-      data_vencimento || (condicao === 'avista' ? data_compra : null),
-      condicao === 'parcelado' || condicao === 'entrada_parcelado' ? qtdParcelas : 1,
-      Number(valor_entrada) || 0,
-      observacao || null
-    ], function(err) {
-      if (err) {
-        db.run('ROLLBACK');
-        return res.status(500).json({ error: err.message });
+  const continuarGravacao = () => {
+    db.serialize(() => {
+      db.run('BEGIN TRANSACTION');
+
+      db.run(`
+        INSERT INTO compras (
+          data_compra, data_emissao, data_entrada, fornecedor, fornecedor_cnpj,
+          numero_nf, serie_nf, modelo_nf, chave_acesso,
+          valor_produtos, valor_desconto, valor_frete, valor_outras_despesas,
+          valor_total_nota, total, total_xml, total_itens_calculado, diferenca_total,
+          status, condicao_pagamento, forma_pagamento, data_vencimento,
+          parcelas, valor_entrada, observacao
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'concluida', ?, ?, ?, ?, ?, ?)
+      `, [
+        data_compra,
+        data_emissao || null,
+        data_entrada || null,
+        fornecedor || null,
+        fornecedor_cnpj || null,
+        numero_nf || null,
+        serie_nf || null,
+        modelo_nf || null,
+        chaveLimpa || null,
+        Number(valor_produtos) || 0,
+        Number(valor_desconto) || 0,
+        Number(valor_frete) || 0,
+        Number(valor_outras_despesas) || 0,
+        totalXml,
+        totalXml,
+        totalXml,
+        totalItensCalculado,
+        diferencaTotal,
+        condicao,
+        forma_pagamento || null,
+        data_vencimento || (condicao === 'avista' ? data_compra : null),
+        condicao === 'parcelado' || condicao === 'entrada_parcelado' ? qtdParcelas : 1,
+        Number(valor_entrada) || 0,
+        observacao || null
+      ], function(err) {
+        if (err) {
+          db.run('ROLLBACK');
+
+          if (String(err.message || '').includes('UNIQUE') || String(err.message || '').includes('compras.chave_acesso')) {
+            return res.status(400).json({ error: 'Esta nota já foi lançada. A chave de acesso já existe no sistema.' });
+          }
+
+          return res.status(500).json({ error: err.message });
+        }
+
+        const compraId = this.lastID;
+
+        processarItensCompra(compraId, itensComRateio, fornecedor, (itensErr) => {
+          if (itensErr) {
+            db.run('ROLLBACK');
+            return res.status(500).json({ error: itensErr.message });
+          }
+
+          criarFinanceiroCompra({
+            id: compraId,
+            data_compra,
+            fornecedor,
+            total: totalXml,
+            condicao_pagamento: condicao,
+            forma_pagamento,
+            data_vencimento,
+            parcelas: (condicao === 'parcelado' || condicao === 'entrada_parcelado') ? qtdParcelas : 1,
+            valor_entrada: Number(valor_entrada) || 0,
+            observacao
+          }, (finErr) => {
+            if (finErr) {
+              db.run('ROLLBACK');
+              return res.status(500).json({ error: finErr.message });
+            }
+
+            db.run('COMMIT');
+            res.json({
+              id: compraId,
+              message: 'Compra registrada com sucesso e integrada ao estoque/financeiro.',
+              conferencia: {
+                total_xml: totalXml,
+                total_itens_calculado: totalItensCalculado,
+                diferenca_total: diferencaTotal
+              }
+            });
+          });
+        });
+      });
+    });
+  };
+
+  if (chaveLimpa) {
+    db.get('SELECT id, status FROM compras WHERE chave_acesso = ? LIMIT 1', [chaveLimpa], (dupErr, existente) => {
+      if (dupErr) return res.status(500).json({ error: dupErr.message });
+
+      if (existente) {
+        return res.status(400).json({
+          error: `Esta nota já foi lançada na compra #${existente.id}. Não é permitido lançar a mesma chave de acesso duas vezes.` 
+        });
       }
 
-      const compraId = this.lastID;
-      processarItensCompra(compraId, itens, fornecedor, (itensErr) => {
+      garantirFornecedorCompra({
+        fornecedor,
+        fornecedor_cnpj,
+        fornecedor_rua,
+        fornecedor_numero,
+        fornecedor_bairro,
+        fornecedor_cidade,
+        fornecedor_uf,
+        fornecedor_cep
+      }, (fornErr) => {
+        if (fornErr) return res.status(500).json({ error: fornErr.message });
+        continuarGravacao();
+      });
+    });
+  } else {
+    garantirFornecedorCompra({
+      fornecedor,
+      fornecedor_cnpj,
+      fornecedor_rua,
+      fornecedor_numero,
+      fornecedor_bairro,
+      fornecedor_cidade,
+      fornecedor_uf,
+      fornecedor_cep
+    }, (fornErr) => {
+      if (fornErr) return res.status(500).json({ error: fornErr.message });
+      continuarGravacao();
+    });
+  }
+});
+
+router.post('/:id/cancelar', (req, res) => {
+  const { id } = req.params;
+  const motivo = String(req.body?.motivo || 'Cancelamento manual da compra').trim();
+
+  db.serialize(() => {
+    db.run('BEGIN TRANSACTION');
+
+    db.get('SELECT * FROM compras WHERE id = ?', [id], (compraErr, compra) => {
+      if (compraErr) {
+        db.run('ROLLBACK');
+        return res.status(500).json({ error: compraErr.message });
+      }
+
+      if (!compra) {
+        db.run('ROLLBACK');
+        return res.status(404).json({ error: 'Compra não encontrada.' });
+      }
+
+      if (compra.status === 'cancelada') {
+        db.run('ROLLBACK');
+        return res.status(400).json({ error: 'Esta compra já está cancelada.' });
+      }
+
+      db.all('SELECT * FROM compras_itens WHERE compra_id = ?', [id], (itensErr, itens) => {
         if (itensErr) {
           db.run('ROLLBACK');
           return res.status(500).json({ error: itensErr.message });
         }
 
-        criarFinanceiroCompra({
-          id: compraId,
-          data_compra,
-          fornecedor,
-          total: totalNum,
-          condicao_pagamento: condicao,
-          forma_pagamento,
-          data_vencimento,
-          parcelas: (condicao === 'parcelado' || condicao === 'entrada_parcelado') ? qtdParcelas : 1,
-          valor_entrada: Number(valor_entrada) || 0,
-          observacao
-        }, (finErr) => {
-          if (finErr) {
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: finErr.message });
-          }
-          db.run('COMMIT');
-          res.json({ id: compraId, message: 'Compra registrada com sucesso e integrada ao financeiro.' });
-        });
-      });
-    });
-  });
-});
+        const validarEstoque = (index = 0) => {
+          if (index >= itens.length) return baixarEstoque();
 
-router.delete('/:id', (req, res) => {
-  const { id } = req.params;
-  db.serialize(() => {
-    db.run('BEGIN TRANSACTION');
+          const item = itens[index];
 
-    db.all('SELECT * FROM compras_itens WHERE compra_id = ?', [id], (err, itens) => {
-      if (err) {
-        db.run('ROLLBACK');
-        return res.status(500).json({ error: err.message });
-      }
-
-      const finalizar = () => {
-        db.run('DELETE FROM financeiro WHERE compra_id = ?', [id], (finErr) => {
-          if (finErr) {
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: finErr.message });
-          }
-          db.run('DELETE FROM compras WHERE id = ?', [id], (delErr) => {
-            if (delErr) {
+          db.get('SELECT nome, estoque_atual FROM produtos WHERE id = ?', [item.produto_id], (prodErr, produto) => {
+            if (prodErr) {
               db.run('ROLLBACK');
-              return res.status(500).json({ error: delErr.message });
+              return res.status(500).json({ error: prodErr.message });
             }
-            db.run('COMMIT');
-            res.json({ message: 'Compra deletada com sucesso' });
+
+            const estoqueAtual = Number(produto?.estoque_atual || 0);
+            const quantidadeBaixar = Number(item.quantidade || 0);
+
+            if (estoqueAtual < quantidadeBaixar) {
+              db.run('ROLLBACK');
+              return res.status(400).json({
+                error: `Não é possível cancelar. O produto "${produto?.nome || item.descricao_produto}" tem estoque atual ${estoqueAtual}, mas a compra adicionou ${quantidadeBaixar}.` 
+              });
+            }
+
+            validarEstoque(index + 1);
           });
-        });
-      };
+        };
 
-      if (!itens || itens.length === 0) {
-        finalizar();
-        return;
-      }
+        const baixarEstoque = (index = 0) => {
+          if (index >= itens.length) return finalizarCancelamento();
 
-      let processados = 0;
-      itens.forEach(item => {
-        db.run(`
-          UPDATE produtos
-          SET estoque_atual = estoque_atual - ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [item.quantidade, item.produto_id], (upErr) => {
-          if (upErr) {
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: upErr.message });
-          }
-          processados += 1;
-          if (processados === itens.length) finalizar();
-        });
+          const item = itens[index];
+
+          db.run(`
+            UPDATE produtos
+            SET estoque_atual = estoque_atual - ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `, [Number(item.quantidade || 0), item.produto_id], (upErr) => {
+            if (upErr) {
+              db.run('ROLLBACK');
+              return res.status(500).json({ error: upErr.message });
+            }
+
+            baixarEstoque(index + 1);
+          });
+        };
+
+        const finalizarCancelamento = () => {
+          db.run(`
+            UPDATE financeiro
+            SET status = 'cancelado',
+                observacao = COALESCE(observacao, '') || ' | Cancelado junto com a compra.'
+            WHERE compra_id = ?
+          `, [id], (finErr) => {
+            if (finErr) {
+              db.run('ROLLBACK');
+              return res.status(500).json({ error: finErr.message });
+            }
+
+            db.run(`
+              UPDATE compras
+              SET status = 'cancelada',
+                  cancelada_em = CURRENT_TIMESTAMP,
+                  motivo_cancelamento = ?
+              WHERE id = ?
+            `, [motivo, id], (compraUpErr) => {
+              if (compraUpErr) {
+                db.run('ROLLBACK');
+                return res.status(500).json({ error: compraUpErr.message });
+              }
+
+              db.run('COMMIT');
+              res.json({ message: 'Compra cancelada com segurança. Estoque e financeiro foram ajustados.' });
+            });
+          });
+        };
+
+        validarEstoque();
       });
     });
   });
@@ -522,6 +773,12 @@ router.post('/parse-xml', upload.single('xml'), (req, res) => {
         data_entrada: ide?.dhSaiEnt ? moment(ide.dhSaiEnt).format('YYYY-MM-DD') : '',
         fornecedor: emit?.xNome || '',
         fornecedor_cnpj: emit?.CNPJ || '',
+        fornecedor_rua: emit?.enderEmit?.xLgr || '',
+        fornecedor_numero: emit?.enderEmit?.nro || '',
+        fornecedor_bairro: emit?.enderEmit?.xBairro || '',
+        fornecedor_cidade: emit?.enderEmit?.xMun || '',
+        fornecedor_uf: emit?.enderEmit?.UF || '',
+        fornecedor_cep: emit?.enderEmit?.CEP || '',
         fornecedor_endereco: [
           emit?.enderEmit?.xLgr,
           emit?.enderEmit?.nro,
