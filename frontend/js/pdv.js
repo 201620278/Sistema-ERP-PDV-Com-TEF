@@ -479,8 +479,10 @@ function adicionarProdutoPorCodigo(codigo) {
                 return;
             }
 
-            // Remover modal imediatamente do DOM
+            // Remover modal e backdrop imediatamente do DOM
             $('#modalPeso').remove();
+            $('.modal-backdrop').remove();
+            $('body').removeClass('modal-open');
 
             adicionarItemNoCarrinho(produto, peso, Number(produto.preco_venda || 0), ` - Peso: ${peso.toFixed(3)} KG`);
         }
@@ -494,9 +496,9 @@ function adicionarProdutoPorCodigo(codigo) {
 
         // Remover modal se o usuário cancelar
         $('#modalPeso .btn-secondary, #modalPeso .btn-close').on('click', function() {
-            setTimeout(() => {
-                $('#modalPeso').remove();
-            }, 300);
+            $('#modalPeso').remove();
+            $('.modal-backdrop').remove();
+            $('body').removeClass('modal-open');
         });
 
         $inputPeso.focus();

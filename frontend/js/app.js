@@ -222,6 +222,15 @@ function formatDateTime(dateString) {
         });
 }
 
+function formatarDataHoraBR(dataHora) {
+  if (!dataHora) return '-';
+
+  const [data, hora] = dataHora.split(' ');
+  const [ano, mes, dia] = data.split('-');
+
+  return `${dia}/${mes}/${ano} ${hora}`;
+}
+
 function showNotification(mensagem, tipo = 'success') {
     const container = document.getElementById('notification-container');
 
