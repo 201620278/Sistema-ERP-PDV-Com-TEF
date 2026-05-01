@@ -133,6 +133,28 @@ router.get('/danfe/venda/:vendaId', (req, res) => {
   });
 });
 
+function extrairTagXml(xml, tag) {
+  const regex = new RegExp(`<${tag}>(.*?)</${tag}>`, 'i');
+  const match = String(xml || '').match(regex);
+  return match ? match[1] : null;
+}
+
+function extrairCancelamentoSefaz(xml) {
+  const texto = String(xml || '');
+
+  const blocoEventoMatch = texto.match(/<retEvento[\s\S]*?<\/retEvento>/i);
+  const blocoEvento = blocoEventoMatch ? blocoEventoMatch[0] : texto;
+
+  return {
+    cStatLote: extrairTagXml(texto, 'cStat'),
+    xMotivoLote: extrairTagXml(texto, 'xMotivo'),
+    cStatEvento: extrairTagXml(blocoEvento, 'cStat'),
+    xMotivoEvento: extrairTagXml(blocoEvento, 'xMotivo'),
+    protocoloCancelamento: extrairTagXml(blocoEvento, 'nProt'),
+    dataCancelamento: extrairTagXml(blocoEvento, 'dhRegEvento')
+  };
+}
+
 router.post('/notas/:id/cancelar', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -157,6 +179,12 @@ router.post('/notas/:id/cancelar', async (req, res) => {
         return res.status(404).json({ error: 'NFC-e não encontrada.' });
       }
 
+      if (String(nota.status || '').toLowerCase() === 'cancelada') {
+        return res.status(400).json({
+          error: 'Esta NFC-e já está cancelada.'
+        });
+      }
+
       if (!String(nota.status || '').toLowerCase().includes('autoriz')) {
         return res.status(400).json({
           error: 'Somente NFC-e autorizada pode ser cancelada.'
@@ -179,21 +207,55 @@ router.post('/notas/:id/cancelar', async (req, res) => {
           ? retorno
           : JSON.stringify(retorno);
 
+        const dadosCancelamento = extrairCancelamentoSefaz(retornoTexto);
+
+        const canceladoComSucesso =
+          String(dadosCancelamento.cStatEvento) === '135' ||
+          String(dadosCancelamento.cStatEvento) === '136' ||
+          String(dadosCancelamento.cStatEvento) === '155';
+
+        const novoStatus = canceladoComSucesso
+          ? 'cancelada'
+          : 'cancelamento_rejeitado';
+
+        const resumoCancelamento = `
+STATUS CANCELAMENTO: ${novoStatus}
+cStatEvento: ${dadosCancelamento.cStatEvento || ''}
+xMotivoEvento: ${dadosCancelamento.xMotivoEvento || ''}
+protocoloCancelamento: ${dadosCancelamento.protocoloCancelamento || ''}
+dataCancelamento: ${dadosCancelamento.dataCancelamento || ''}
+justificativa: ${justificativa.trim()}
+`;
+
         db.run(`
           UPDATE nfce_notas
           SET status = ?,
-              xml_retorno = COALESCE(xml_retorno, '') || char(10) || ?,
+              xml_retorno = COALESCE(xml_retorno, '') || char(10) || ? || char(10) || ?,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `, ['cancelamento_enviado', retornoTexto, id], (updErr) => {
+        `, [novoStatus, resumoCancelamento, retornoTexto, id], (updErr) => {
           if (updErr) {
             return res.status(500).json({ error: updErr.message });
           }
 
+          if (!canceladoComSucesso) {
+            return res.status(400).json({
+              success: false,
+              message: dadosCancelamento.xMotivoEvento || 'Cancelamento rejeitado pela SEFAZ.',
+              status: novoStatus,
+              retorno,
+              dadosCancelamento
+            });
+          }
+
           res.json({
             success: true,
-            message: 'Cancelamento enviado para a SEFAZ.',
-            retorno
+            message: 'NFC-e cancelada com sucesso.',
+            status: novoStatus,
+            protocoloCancelamento: dadosCancelamento.protocoloCancelamento,
+            dataCancelamento: dadosCancelamento.dataCancelamento,
+            retorno,
+            dadosCancelamento
           });
         });
       } catch (cancelErr) {
