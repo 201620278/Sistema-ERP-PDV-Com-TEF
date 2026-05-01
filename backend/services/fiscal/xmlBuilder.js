@@ -49,6 +49,40 @@ function mapearFormaPagamento(forma) {
   return mapa[forma] || '99';
 }
 
+function montarPagamentos(pagamentos) {
+  let xml = '<pag>';
+
+  pagamentos.forEach(p => {
+    let tPag = '99';
+
+    if (p.tipo === 'dinheiro') tPag = '01';
+    else if (p.tipo === 'pix') tPag = '17';
+    else if (p.tipo === 'cartao_credito') tPag = '03';
+    else if (p.tipo === 'cartao_debito') tPag = '04';
+    else if (p.tipo === 'promissoria') tPag = '05';
+
+    xml += `
+      <detPag>
+        <tPag>${tPag}</tPag>
+        <vPag>${Number(p.valor).toFixed(2)}</vPag>
+    `;
+
+    if (tPag === '03' || tPag === '04' || tPag === '17') {
+      xml += `
+        <card>
+          <tpIntegra>2</tpIntegra>
+        </card>
+      `;
+    }
+
+    xml += `</detPag>`;
+  });
+
+  xml += '</pag>';
+
+  return xml;
+}
+
 function gerarQrCodeUrl({
   consultaUrl,
   chave,
@@ -267,21 +301,13 @@ function buildNfceXml({ config, venda, itens, numero }) {
 
   vNF = round2(vProd - vDesc);
 
-  const tPag = mapearFormaPagamento(venda.forma_pagamento);
+  const pagamentosVenda = venda.pagamentos && venda.pagamentos.length > 0
+    ? venda.pagamentos
+    : [{ tipo: venda.forma_pagamento || 'outro', valor: vNF }];
 
-  let blocoCard = '';
+  const pag = montarPagamentos(pagamentosVenda);
 
-  if (tPag === '03' || tPag === '04') {
-    blocoCard = `
-    <card>
-      <tpIntegra>2</tpIntegra>
-    </card>`;
-  }
-
-  const pag =
-    venda.forma_pagamento === 'prazo'
-      ? `<detPag><indPag>1</indPag><tPag>99</tPag><vPag>${formatNumber(vNF, 2)}</vPag></detPag>`
-      : `<detPag><indPag>0</indPag><tPag>${tPag}</tPag><vPag>${formatNumber(vNF, 2)}</vPag>${blocoCard}</detPag>`;
+  console.log('PAGAMENTO NFCe:', pag);
 
   const xmlSemAssinatura = `<?xml version="1.0" encoding="UTF-8"?>
 <NFe xmlns="http://www.portalfiscal.inf.br/nfe">
@@ -353,9 +379,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
     <transp>
       <modFrete>9</modFrete>
     </transp>
-    <pag>
-      ${pag}
-    </pag>
+    ${pag}
     ${tagInfAdic}
   </infNFe>
 </NFe>`;

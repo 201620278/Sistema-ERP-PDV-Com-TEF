@@ -158,11 +158,27 @@ function carregarFiscalConfig() {
                     ${getFiscalField('Senha do certificado', 'fiscal_certificado_senha', cfg.certificadoSenha || '', '', 'password')}
                     <input type="hidden" class="fiscal-field" id="fiscal_certificado_path" value="${cfg.certificadoPath || ''}">
                     ${getFiscalField('Tipo impressão', 'fiscal_tp_imp', cfg.tpImp || 4, '4 = DANFE NFC-e')}
-                    ${getFiscalField('URL consulta QRCode homologação', 'fiscal_csc_qrcode_url_homologacao', (cfg.urls && cfg.urls.consultaQr) || '')}
-                    ${getFiscalField('URL consulta chave homologação', 'fiscal_consulta_chave_url_homologacao', (cfg.urls && cfg.urls.consultaChave) || '')}
-                    ${getFiscalField('WS autorização homologação', 'fiscal_ws_autorizacao_homologacao', (cfg.urls && cfg.urls.autorizacao) || '')}
-                    ${getFiscalField('WS retorno homologação', 'fiscal_ws_retorno_homologacao', (cfg.urls && cfg.urls.retorno) || '')}
-                    ${getFiscalField('WS status homologação', 'fiscal_ws_status_homologacao', (cfg.urls && cfg.urls.status) || '')}
+                    <div class="col-12">
+                        <hr>
+                        <h6 class="text-warning">URLs de Homologação</h6>
+                    </div>
+
+                    ${getFiscalField('URL consulta QRCode homologação', 'fiscal_csc_qrcode_url_homologacao', (cfg.urlsHomologacao && cfg.urlsHomologacao.consultaQr) || '')}
+                    ${getFiscalField('URL consulta chave homologação', 'fiscal_consulta_chave_url_homologacao', (cfg.urlsHomologacao && cfg.urlsHomologacao.consultaChave) || '')}
+                    ${getFiscalField('WS autorização homologação', 'fiscal_ws_autorizacao_homologacao', (cfg.urlsHomologacao && cfg.urlsHomologacao.autorizacao) || '')}
+                    ${getFiscalField('WS retorno homologação', 'fiscal_ws_retorno_homologacao', (cfg.urlsHomologacao && cfg.urlsHomologacao.retorno) || '')}
+                    ${getFiscalField('WS status homologação', 'fiscal_ws_status_homologacao', (cfg.urlsHomologacao && cfg.urlsHomologacao.status) || '')}
+
+                    <div class="col-12">
+                        <hr>
+                        <h6 class="text-danger">URLs de Produção</h6>
+                    </div>
+
+                    ${getFiscalField('URL consulta QRCode produção', 'fiscal_csc_qrcode_url_producao', (cfg.urlsProducao && cfg.urlsProducao.consultaQr) || '')}
+                    ${getFiscalField('URL consulta chave produção', 'fiscal_consulta_chave_url_producao', (cfg.urlsProducao && cfg.urlsProducao.consultaChave) || '')}
+                    ${getFiscalField('WS autorização produção', 'fiscal_ws_autorizacao_producao', (cfg.urlsProducao && cfg.urlsProducao.autorizacao) || '')}
+                    ${getFiscalField('WS retorno produção', 'fiscal_ws_retorno_producao', (cfg.urlsProducao && cfg.urlsProducao.retorno) || '')}
+                    ${getFiscalField('WS status produção', 'fiscal_ws_status_producao', (cfg.urlsProducao && cfg.urlsProducao.status) || '')}
                 </div>
 
                 <div class="d-flex gap-2 flex-wrap align-items-center">

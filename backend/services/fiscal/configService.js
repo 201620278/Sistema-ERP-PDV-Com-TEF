@@ -41,11 +41,19 @@ async function getFiscalConfig() {
     'fiscal_ie',
     'fiscal_im',
     'fiscal_cnae',
+
     'fiscal_csc_qrcode_url_homologacao',
     'fiscal_consulta_chave_url_homologacao',
     'fiscal_ws_autorizacao_homologacao',
     'fiscal_ws_retorno_homologacao',
     'fiscal_ws_status_homologacao',
+
+    'fiscal_csc_qrcode_url_producao',
+    'fiscal_consulta_chave_url_producao',
+    'fiscal_ws_autorizacao_producao',
+    'fiscal_ws_retorno_producao',
+    'fiscal_ws_status_producao',
+
     'fiscal_tp_imp',
     'fiscal_municipio_codigo',
     'fiscal_municipio_nome',
@@ -64,6 +72,32 @@ async function getFiscalConfig() {
 
   if (![1, 2].includes(ambienteFiscal)) {
     throw new Error('Ambiente fiscal inválido. Escolha 1 Produção ou 2 Homologação.');
+  }
+
+  const urlsHomologacao = {
+    autorizacao: cfg.fiscal_ws_autorizacao_homologacao || '',
+    retorno: cfg.fiscal_ws_retorno_homologacao || '',
+    status: cfg.fiscal_ws_status_homologacao || '',
+    consultaQr: cfg.fiscal_csc_qrcode_url_homologacao || '',
+    consultaChave: cfg.fiscal_consulta_chave_url_homologacao || ''
+  };
+
+  const urlsProducao = {
+    autorizacao: cfg.fiscal_ws_autorizacao_producao || '',
+    retorno: cfg.fiscal_ws_retorno_producao || '',
+    status: cfg.fiscal_ws_status_producao || '',
+    consultaQr: cfg.fiscal_csc_qrcode_url_producao || '',
+    consultaChave: cfg.fiscal_consulta_chave_url_producao || ''
+  };
+
+  const urlsSelecionadas = ambienteFiscal === 1 ? urlsProducao : urlsHomologacao;
+
+  if (!urlsSelecionadas.autorizacao) {
+    throw new Error(
+      ambienteFiscal === 1
+        ? 'URL de autorização em PRODUÇÃO não configurada.'
+        : 'URL de autorização em HOMOLOGAÇÃO não configurada.'
+    );
   }
 
   return {
@@ -92,13 +126,10 @@ async function getFiscalConfig() {
     numeroEndereco: cfg.fiscal_emitente_numero || 'S/N',
     bairro: cfg.fiscal_emitente_bairro || '',
     tpImp: Number(cfg.fiscal_tp_imp || 4),
-    urls: {
-      autorizacao: cfg.fiscal_ws_autorizacao_homologacao || '',
-      retorno: cfg.fiscal_ws_retorno_homologacao || '',
-      status: cfg.fiscal_ws_status_homologacao || '',
-      consultaQr: cfg.fiscal_csc_qrcode_url_homologacao || '',
-      consultaChave: cfg.fiscal_consulta_chave_url_homologacao || ''
-    }
+
+    urls: urlsSelecionadas,
+    urlsHomologacao,
+    urlsProducao
   };
 }
 
