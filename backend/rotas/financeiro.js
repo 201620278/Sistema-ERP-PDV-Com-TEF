@@ -18,6 +18,10 @@ function parseNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function arredondarCentavos(value) {
+  return Math.round(parseNumber(value) * 100) / 100;
+}
+
 function dbGetAsync(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => {
@@ -1172,7 +1176,7 @@ router.post('/receber/agrupado/:clienteId/pagamento-parcial', async (req, res) =
   try {
     const clienteId = req.params.clienteId;
     const { valor, data_pagamento, forma_pagamento, observacao } = req.body;
-    const valorPago = parseNumber(valor);
+    const valorPago = arredondarCentavos(valor);
 
     if (valorPago <= 0) {
       return res.status(400).json({ success: false, error: 'Valor deve ser maior que zero' });
@@ -1207,9 +1211,11 @@ router.post('/receber/agrupado/:clienteId/pagamento-parcial', async (req, res) =
       return res.status(400).json({ success: false, error: 'Cliente não possui contas em aberto' });
     }
 
-    const totalAberto = contas.reduce((sum, conta) => sum + parseNumber(conta.valor_restante), 0);
+    const totalAberto = arredondarCentavos(
+      contas.reduce((sum, conta) => sum + arredondarCentavos(conta.valor_restante), 0)
+    );
 
-    if (valorPago > totalAberto) {
+    if (valorPago > totalAberto + 0.009) {
       return res.status(400).json({
         success: false,
         error: `Valor informado (${valorPago.toFixed(2)}) é maior que o total em aberto (${totalAberto.toFixed(2)})`
@@ -1220,7 +1226,7 @@ router.post('/receber/agrupado/:clienteId/pagamento-parcial', async (req, res) =
       db.serialize(() => {
         db.run('BEGIN TRANSACTION');
 
-        let valorRestantePagamento = valorPago;
+        let valorRestantePagamento = arredondarCentavos(valorPago);
         const pagamentos = [];
 
         const processarConta = (index) => {

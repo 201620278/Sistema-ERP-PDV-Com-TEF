@@ -100,6 +100,38 @@ router.post('/', (req, res) => {
   if (!nome) {
     return res.status(400).json({ error: 'O campo nome é obrigatório.' });
   }
+
+  // Validação de CPF/CNPJ duplicado
+  const cpfCnpjLimpo = String(req.body.cpf_cnpj || '').replace(/\D/g, '');
+
+  if (cpfCnpjLimpo) {
+    db.get(
+      'SELECT id, nome, cpf_cnpj FROM clientes WHERE REPLACE(REPLACE(REPLACE(cpf_cnpj, ".", ""), "-", ""), "/", "") = ?',
+      [cpfCnpjLimpo],
+      (err, clienteExistente) => {
+        if (err) {
+          return res.status(500).json({ error: 'Erro ao verificar CPF/CNPJ: ' + err.message });
+        }
+
+        if (clienteExistente) {
+          return res.status(409).json({
+            success: false,
+            message: `Já existe um cliente cadastrado com este CPF/CNPJ: ${clienteExistente.nome}`
+          });
+        }
+
+        req.body.cpf_cnpj = cpfCnpjLimpo;
+        inserirCliente(req, res);
+      }
+    );
+  } else {
+    inserirCliente(req, res);
+  }
+});
+
+function inserirCliente(req, res) {
+  const { nome, cpf_cnpj, telefone, email, cep, rua, numero, bairro, cidade, uf, limite_credito } = req.body;
+
   // Garante que limite_credito seja número
   let limiteCreditoNum = parseFloat(limite_credito);
   if (isNaN(limiteCreditoNum)) limiteCreditoNum = 0;
@@ -114,7 +146,7 @@ router.post('/', (req, res) => {
       }
       res.json({ id: this.lastID, message: 'Cliente criado com sucesso' });
     });
-});
+}
 
 // Atualizar cliente
 router.put('/:id', (req, res) => {
@@ -142,25 +174,30 @@ router.put('/:id', (req, res) => {
 // Deletar cliente
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
-  // Verifica se o cliente possui vendas vinculadas (apenas vendas "concluídas" e cliente_id não nulo)
-  db.get('SELECT COUNT(*) as total FROM vendas WHERE cliente_id = ? AND status = "concluida"', [id], (err, row) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    if (row && row.total > 0) {
-      res.status(400).json({ error: 'Não é possível excluir o cliente, pois existem vendas vinculadas a este cadastro.' });
-      return;
-    }
-    // Se não houver vendas, pode excluir
-    db.run('DELETE FROM clientes WHERE id = ?', [id], function(err) {
+
+  db.get(
+    'SELECT COUNT(*) as total FROM vendas WHERE cliente_id = ?',
+    [id],
+    (err, row) => {
       if (err) {
-        res.status(500).json({ error: err.message });
-        return;
+        return res.status(500).json({ error: err.message });
       }
-      res.json({ message: 'Cliente deletado com sucesso' });
-    });
-  });
+
+      if (row && row.total > 0) {
+        return res.status(400).json({
+          error: 'Não é possível excluir o cliente, pois existem vendas vinculadas a este cadastro.'
+        });
+      }
+
+      db.run('DELETE FROM clientes WHERE id = ?', [id], function (err) {
+        if (err) {
+          return res.status(500).json({ error: err.message });
+        }
+
+        res.json({ message: 'Cliente deletado com sucesso' });
+      });
+    }
+  );
 });
 
 module.exports = router;

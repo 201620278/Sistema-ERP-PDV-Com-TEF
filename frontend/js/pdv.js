@@ -439,74 +439,21 @@ function adicionarProdutoPorCodigo(codigo) {
 
     // 3) Produto KG digitado manualmente
     if (unidadeEhKg(produto)) {
-        // Criar modal customizado para inserir peso
-        const modalHtml = `
-            <div class="modal fade" id="modalPeso" tabindex="-1">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">Informar Peso</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <p>Informe o peso de <strong>${escapeHtml(produto.nome)}</strong> em KG:</p>
-                            <input type="number" id="inputPeso" class="form-control" step="0.001" min="0.001" placeholder="Ex: 0.650" autofocus>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                            <button type="button" class="btn btn-primary" id="btnConfirmarPeso">Confirmar</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        $('#modal-container').append(modalHtml);
-        const modalElement = document.getElementById('modalPeso');
-        const modal = new bootstrap.Modal(modalElement);
-        modal.show();
-
-        const $inputPeso = $('#inputPeso');
-        const $btnConfirmar = $('#btnConfirmarPeso');
-
-        function confirmarPeso() {
-            const pesoInformado = $inputPeso.val();
-            const peso = Number(String(pesoInformado).replace(',', '.'));
-
-            if (!peso || peso <= 0) {
-                showNotification('Peso inválido.', 'warning');
-                $inputPeso.focus();
-                return;
-            }
-
-            // Remover modal e backdrop imediatamente do DOM
-            $('#modalPeso').remove();
-            $('.modal-backdrop').remove();
-            $('body').removeClass('modal-open');
-
-            adicionarItemNoCarrinho(produto, peso, Number(produto.preco_venda || 0), ` - Peso: ${peso.toFixed(3)} KG`);
-        }
-
-        $btnConfirmar.on('click', confirmarPeso);
-        $inputPeso.on('keypress', function(e) {
-            if (e.which === 13) {
-                confirmarPeso();
-            }
+        abrirModalQuantidadeProduto(produto, function (peso) {
+            adicionarItemNoCarrinho(
+                produto,
+                peso,
+                Number(produto.preco_venda || 0),
+                ` - Peso: ${peso.toFixed(3)} KG`
+            );
         });
-
-        // Remover modal se o usuário cancelar
-        $('#modalPeso .btn-secondary, #modalPeso .btn-close').on('click', function() {
-            $('#modalPeso').remove();
-            $('.modal-backdrop').remove();
-            $('body').removeClass('modal-open');
-        });
-
-        $inputPeso.focus();
         return;
     }
 
     // 4) Produto unidade continua igual
-    adicionarItemNoCarrinho(produto, 1, Number(produto.preco_venda || 0));
+    abrirModalQuantidadeProduto(produto, function (quantidade) {
+        adicionarItemNoCarrinho(produto, quantidade, Number(produto.preco_venda || 0));
+    });
 }
 
 function atualizarQuantidade(index, quantidade) {
@@ -1555,3 +1502,103 @@ function fecharModalErroNFCe() {
     }, 300);
 }
 
+function abrirModalQuantidadeProduto(produto, callback) {
+    $('#modalQuantidadeProduto').remove();
+
+    const unidade = String(produto.unidade || 'UN').toUpperCase();
+    const isKg = unidade === 'KG';
+
+    const modalHtml = `
+        <div class="modal fade" id="modalQuantidadeProduto" tabindex="-1">
+            <div class="modal-dialog modal-sm modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header py-2">
+                        <h6 class="modal-title">Quantidade</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <p class="mb-2 fw-bold">${produto.nome}</p>
+
+                        <label class="form-label">
+                            ${isKg ? 'Peso em KG' : 'Quantidade'}
+                        </label>
+
+                        <input 
+                            type="number"
+                            class="form-control form-control-lg"
+                            id="inputQuantidadeProduto"
+                            min="0.001"
+                            step="${isKg ? '0.001' : '1'}"
+                            value="${isKg ? '' : '1'}"
+                            placeholder="${isKg ? 'Ex: 0.650' : 'Ex: 1'}"
+                        >
+
+                        <small class="text-muted">
+                            ${isKg ? 'Digite o peso do produto' : 'Digite a quantidade vendida'}
+                        </small>
+                    </div>
+
+                    <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            Cancelar
+                        </button>
+                        <button type="button" class="btn btn-primary" id="btnConfirmarQuantidadeProduto">
+                            Confirmar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    $('body').append(modalHtml);
+
+    const modalEl = document.getElementById('modalQuantidadeProduto');
+    const modal = new bootstrap.Modal(modalEl);
+
+    modal.show();
+
+    modalEl.addEventListener('shown.bs.modal', function () {
+        const input = document.getElementById('inputQuantidadeProduto');
+        input.focus();
+        input.select();
+    });
+
+    $('#btnConfirmarQuantidadeProduto').off('click').on('click', function () {
+        confirmarQuantidadeProduto(produto, callback, modal);
+    });
+
+    $('#inputQuantidadeProduto').off('keydown').on('keydown', function (e) {
+        if (e.key === 'Enter') {
+            confirmarQuantidadeProduto(produto, callback, modal);
+        }
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', function () {
+        $('#modalQuantidadeProduto').remove();
+    });
+}
+
+function confirmarQuantidadeProduto(produto, callback, modal) {
+    const valor = $('#inputQuantidadeProduto').val();
+    const quantidade = Number(String(valor).replace(',', '.'));
+
+    if (!quantidade || quantidade <= 0) {
+        showNotification('Informe uma quantidade válida.', 'warning');
+        $('#inputQuantidadeProduto').focus();
+        return;
+    }
+
+    if (quantidade > Number(produto.estoque_atual)) {
+        showNotification(`Estoque insuficiente. Disponível: ${produto.estoque_atual}`, 'danger');
+        $('#inputQuantidadeProduto').focus();
+        return;
+    }
+
+    modal.hide();
+
+    if (typeof callback === 'function') {
+        callback(quantidade);
+    }
+}
