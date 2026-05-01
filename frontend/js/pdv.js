@@ -266,7 +266,7 @@ function renderCarrinhoItens() {
                        class="form-control form-control-sm quantidade-item"
                        value="${Number(item.quantidade)}"
                        min="0.01"
-                       step="0.01"
+                       step="0.001"
                        data-index="${index}">
             </td>
             <td>${formatCurrency(item.preco_unitario)}</td>
@@ -287,6 +287,98 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function codigoEhBalanca(codigo) {
+    return /^2\d{12}$/.test(String(codigo || '').trim());
+}
+
+function unidadeEhKg(produto) {
+    return String(produto?.unidade || '').toLowerCase() === 'kg';
+}
+
+// Padrão profissional comum:
+// 2 + 5 dígitos código do produto + 6 dígitos valor total em centavos + dígito verificador
+// Exemplo: 2000010014890
+// Produto: 00001
+// Valor: R$ 14,89
+function interpretarCodigoBalanca(codigo) {
+    const limpo = String(codigo || '').replace(/\D/g, '');
+
+    if (!codigoEhBalanca(limpo)) return null;
+
+    return {
+        codigoProduto: limpo.substring(1, 6),
+        valorTotal: Number(limpo.substring(6, 12)) / 100,
+        codigoOriginal: limpo
+    };
+}
+
+function normalizarCodigoProduto(codigo) {
+    return String(codigo || '').replace(/\D/g, '').replace(/^0+/, '') || String(codigo || '').trim();
+}
+
+function encontrarProdutoPorCodigoOuNome(termo) {
+    const busca = normalizarTexto(termo);
+    const buscaNumerica = normalizarCodigoProduto(termo);
+
+    return produtosDisponiveis.find(p => {
+        const codigo = normalizarTexto(p.codigo);
+        const codigoBarras = normalizarTexto(p.codigo_barras);
+        const nome = normalizarTexto(p.nome);
+
+        const codigoNumerico = normalizarCodigoProduto(p.codigo);
+        const barrasNumerico = normalizarCodigoProduto(p.codigo_barras);
+
+        return (
+            (codigo && codigo === busca) ||
+            (codigoBarras && codigoBarras === busca) ||
+            (codigoNumerico && codigoNumerico === buscaNumerica) ||
+            (barrasNumerico && barrasNumerico === buscaNumerica) ||
+            (nome && nome.includes(busca))
+        );
+    });
+}
+
+function adicionarItemNoCarrinho(produto, quantidade, precoUnitario, mensagemExtra = '') {
+    quantidade = Number(quantidade || 0);
+    precoUnitario = Number(precoUnitario || 0);
+
+    if (quantidade <= 0 || precoUnitario <= 0) {
+        showNotification('Quantidade ou preço inválido.', 'warning');
+        return;
+    }
+
+    if (quantidade > Number(produto.estoque_atual)) {
+        showNotification(`Estoque insuficiente para ${produto.nome}. Disponível: ${produto.estoque_atual}`, 'danger');
+        return;
+    }
+
+    const itemExistente = carrinho.find(item => Number(item.id) === Number(produto.id));
+
+    if (itemExistente) {
+        const novaQuantidade = Number(itemExistente.quantidade) + quantidade;
+
+        if (novaQuantidade > Number(produto.estoque_atual)) {
+            showNotification(`Estoque insuficiente para ${produto.nome}. Disponível: ${produto.estoque_atual}`, 'danger');
+            return;
+        }
+
+        itemExistente.quantidade = Number(novaQuantidade.toFixed(3));
+        itemExistente.preco_unitario = precoUnitario;
+        itemExistente.subtotal = Number((itemExistente.quantidade * precoUnitario).toFixed(2));
+    } else {
+        carrinho.push({
+            id: produto.id,
+            nome: produto.nome,
+            quantidade: Number(quantidade.toFixed(3)),
+            preco_unitario: precoUnitario,
+            subtotal: Number((quantidade * precoUnitario).toFixed(2))
+        });
+    }
+
+    atualizarCarrinho();
+    showNotification(`${produto.nome} adicionado ao carrinho${mensagemExtra}.`, 'success');
+}
+
 function adicionarProdutoPorCodigo(codigo) {
     if (!codigo || !codigo.trim()) return;
 
@@ -295,12 +387,45 @@ function adicionarProdutoPorCodigo(codigo) {
         return;
     }
 
-    const busca = normalizarTexto(codigo);
-    const produto = produtosDisponiveis.find(p => {
-        const cod = normalizarTexto(p.codigo);
-        const nome = normalizarTexto(p.nome);
-        return (cod && (cod === busca || cod.includes(busca))) || (nome && nome.includes(busca));
-    });
+    const codigoDigitado = String(codigo).trim();
+
+    // 1) Código de balança
+    const dadosBalanca = interpretarCodigoBalanca(codigoDigitado);
+
+    if (dadosBalanca) {
+        const produtoBalanca = encontrarProdutoPorCodigoOuNome(dadosBalanca.codigoProduto);
+
+        if (!produtoBalanca) {
+            showNotification(`Produto da balança não encontrado. Código interno: ${dadosBalanca.codigoProduto}`, 'danger');
+            return;
+        }
+
+        if (!unidadeEhKg(produtoBalanca)) {
+            showNotification(`O produto ${produtoBalanca.nome} não está cadastrado como KG.`, 'warning');
+            return;
+        }
+
+        const precoKg = Number(produtoBalanca.preco_venda || 0);
+
+        if (precoKg <= 0) {
+            showNotification(`Preço por KG inválido para ${produtoBalanca.nome}.`, 'danger');
+            return;
+        }
+
+        const peso = dadosBalanca.valorTotal / precoKg;
+
+        adicionarItemNoCarrinho(
+            produtoBalanca,
+            peso,
+            precoKg,
+            ` - Peso: ${peso.toFixed(3)} KG - Total: ${formatCurrency(dadosBalanca.valorTotal)}`
+        );
+
+        return;
+    }
+
+    // 2) Produto normal
+    const produto = encontrarProdutoPorCodigoOuNome(codigoDigitado);
 
     if (!produto) {
         showNotification(`Produto não encontrado: ${codigo}`, 'danger');
@@ -312,28 +437,74 @@ function adicionarProdutoPorCodigo(codigo) {
         return;
     }
 
-    const itemExistente = carrinho.find(item => item.id === produto.id);
+    // 3) Produto KG digitado manualmente
+    if (unidadeEhKg(produto)) {
+        // Criar modal customizado para inserir peso
+        const modalHtml = `
+            <div class="modal fade" id="modalPeso" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Informar Peso</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>Informe o peso de <strong>${escapeHtml(produto.nome)}</strong> em KG:</p>
+                            <input type="number" id="inputPeso" class="form-control" step="0.001" min="0.001" placeholder="Ex: 0.650" autofocus>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="button" class="btn btn-primary" id="btnConfirmarPeso">Confirmar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
 
-    if (itemExistente) {
-        const novaQuantidade = Number(itemExistente.quantidade) + 1;
-        if (novaQuantidade > Number(produto.estoque_atual)) {
-            showNotification(`Estoque insuficiente para ${produto.nome}. Disponível: ${produto.estoque_atual}`, 'danger');
-            return;
+        $('#modal-container').append(modalHtml);
+        const modalElement = document.getElementById('modalPeso');
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+
+        const $inputPeso = $('#inputPeso');
+        const $btnConfirmar = $('#btnConfirmarPeso');
+
+        function confirmarPeso() {
+            const pesoInformado = $inputPeso.val();
+            const peso = Number(String(pesoInformado).replace(',', '.'));
+
+            if (!peso || peso <= 0) {
+                showNotification('Peso inválido.', 'warning');
+                $inputPeso.focus();
+                return;
+            }
+
+            // Remover modal imediatamente do DOM
+            $('#modalPeso').remove();
+
+            adicionarItemNoCarrinho(produto, peso, Number(produto.preco_venda || 0), ` - Peso: ${peso.toFixed(3)} KG`);
         }
-        itemExistente.quantidade = novaQuantidade;
-        itemExistente.subtotal = novaQuantidade * Number(itemExistente.preco_unitario);
-    } else {
-        carrinho.push({
-            id: produto.id,
-            nome: produto.nome,
-            quantidade: 1,
-            preco_unitario: Number(produto.preco_venda || 0),
-            subtotal: Number(produto.preco_venda || 0)
+
+        $btnConfirmar.on('click', confirmarPeso);
+        $inputPeso.on('keypress', function(e) {
+            if (e.which === 13) {
+                confirmarPeso();
+            }
         });
+
+        // Remover modal se o usuário cancelar
+        $('#modalPeso .btn-secondary, #modalPeso .btn-close').on('click', function() {
+            setTimeout(() => {
+                $('#modalPeso').remove();
+            }, 300);
+        });
+
+        $inputPeso.focus();
+        return;
     }
 
-    atualizarCarrinho();
-    showNotification(`${produto.nome} adicionado ao carrinho.`, 'success');
+    // 4) Produto unidade continua igual
+    adicionarItemNoCarrinho(produto, 1, Number(produto.preco_venda || 0));
 }
 
 function atualizarQuantidade(index, quantidade) {

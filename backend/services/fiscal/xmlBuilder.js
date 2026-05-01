@@ -101,6 +101,52 @@ function anexarInfNFeSupl(xmlAssinado, infNFeSupl) {
   return xml.replace('</infNFe>', `</infNFe>${infNFeSupl}`);
 }
 
+function codigoInternoOuBalanca(codigo) {
+  const ean = onlyDigits(codigo || '');
+  return /^2\d{12}$/.test(ean);
+}
+
+function gtinValido(codigo) {
+  const ean = onlyDigits(codigo || '');
+
+  if (![8, 12, 13, 14].includes(ean.length)) {
+    return false;
+  }
+
+  const numeros = ean.split('').map(Number);
+  const digito = numeros.pop();
+
+  let soma = 0;
+  let peso = 3;
+
+  for (let i = numeros.length - 1; i >= 0; i--) {
+    soma += numeros[i] * peso;
+    peso = peso === 3 ? 1 : 3;
+  }
+
+  const calculado = (10 - (soma % 10)) % 10;
+  return calculado === digito;
+}
+
+function obterEANFiscal(item) {
+  const unidade = String(item.unidade || '').toLowerCase();
+  const codigo = item.codigo_barras || item.produto_codigo_barras || '';
+
+  if (unidade === 'kg') {
+    return 'SEM GTIN';
+  }
+
+  if (codigoInternoOuBalanca(codigo)) {
+    return 'SEM GTIN';
+  }
+
+  if (!gtinValido(codigo)) {
+    return 'SEM GTIN';
+  }
+
+  return onlyDigits(codigo);
+}
+
 function buildNfceXml({ config, venda, itens, numero }) {
   const dhEmi = nowDhEmi();
   const aamm = dhEmi.slice(2, 4) + dhEmi.slice(5, 7);
@@ -158,7 +204,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
     const ncm = padLeft(onlyDigits(item.ncm || item.produto_ncm || '00000000').slice(0, 8), 8);
     const cfop = item.cfop || '5102';
     const cest = onlyDigits(item.cest || item.produto_cest || '');
-    const cEAN = onlyDigits(item.codigo_barras || item.produto_codigo_barras || '');
+    const cEAN = obterEANFiscal(item);
     const unidade = item.unidade || 'UN';
     const xProd = Number(config.ambiente) === 2 && idx === 0
       ? descricaoHomologacao
@@ -209,10 +255,19 @@ function buildNfceXml({ config, venda, itens, numero }) {
 
   const tPag = mapearFormaPagamento(venda.forma_pagamento);
 
+  let blocoCard = '';
+
+  if (tPag === '03' || tPag === '04') {
+    blocoCard = `
+    <card>
+      <tpIntegra>2</tpIntegra>
+    </card>`;
+  }
+
   const pag =
     venda.forma_pagamento === 'prazo'
       ? `<detPag><indPag>1</indPag><tPag>99</tPag><vPag>${formatNumber(vNF, 2)}</vPag></detPag>`
-      : `<detPag><indPag>0</indPag><tPag>${tPag}</tPag><vPag>${formatNumber(vNF, 2)}</vPag></detPag>`;
+      : `<detPag><indPag>0</indPag><tPag>${tPag}</tPag><vPag>${formatNumber(vNF, 2)}</vPag>${blocoCard}</detPag>`;
 
   const xmlSemAssinatura = `<?xml version="1.0" encoding="UTF-8"?>
 <NFe xmlns="http://www.portalfiscal.inf.br/nfe">

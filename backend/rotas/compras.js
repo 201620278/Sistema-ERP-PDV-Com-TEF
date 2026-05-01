@@ -6,7 +6,24 @@ const multer = require('multer');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-function toDate(value, fallback = moment().format('YYYY-MM-DD')) {
+function agoraLocalBrasil() {
+  const agora = new Date();
+
+  const dataBrasil = new Date(
+    agora.toLocaleString('en-US', { timeZone: 'America/Fortaleza' })
+  );
+
+  const ano = dataBrasil.getFullYear();
+  const mes = String(dataBrasil.getMonth() + 1).padStart(2, '0');
+  const dia = String(dataBrasil.getDate()).padStart(2, '0');
+  const hora = String(dataBrasil.getHours()).padStart(2, '0');
+  const min = String(dataBrasil.getMinutes()).padStart(2, '0');
+  const seg = String(dataBrasil.getSeconds()).padStart(2, '0');
+
+  return `${ano}-${mes}-${dia} ${hora}:${min}:${seg}`;
+}
+
+function toDate(value, fallback = agoraLocalBrasil().slice(0, 10)) {
   return value ? moment(value).format('YYYY-MM-DD') : fallback;
 }
 

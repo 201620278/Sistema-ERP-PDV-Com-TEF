@@ -172,7 +172,8 @@ router.post('/', (req, res) => {
     codigo, nome, categoria_id, subcategoria_id, unidade, preco_compra,
     lucro_percentual, preco_venda, estoque_atual, estoque_minimo, fornecedor,
     ncm, cfop, csosn, origem, cest, codigo_barras,
-    aliquota_icms, aliquota_pis, aliquota_cofins
+    aliquota_icms, aliquota_pis, aliquota_cofins,
+    vendido_por_peso, peso_total_compra, valor_total_compra, custo_por_kg
   } = req.body;
 
   db.run(`
@@ -181,15 +182,20 @@ router.post('/', (req, res) => {
       preco_compra, lucro_percentual, preco_venda,
       estoque_atual, estoque_minimo, fornecedor,
       ncm, cfop, csosn, origem, cest, codigo_barras,
-      aliquota_icms, aliquota_pis, aliquota_cofins
+      aliquota_icms, aliquota_pis, aliquota_cofins,
+      vendido_por_peso, peso_total_compra, valor_total_compra, custo_por_kg
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     codigo, nome, categoria_id, subcategoria_id, unidade,
     preco_compra, lucro_percentual, preco_venda,
     estoque_atual || 0, estoque_minimo || 0, fornecedor,
     ncm, cfop, csosn, origem, cest, codigo_barras,
-    aliquota_icms, aliquota_pis, aliquota_cofins
+    aliquota_icms, aliquota_pis, aliquota_cofins,
+    vendido_por_peso || 0,
+    peso_total_compra || 0,
+    valor_total_compra || 0,
+    custo_por_kg || 0
   ],
     function(err) {
       if (err) {

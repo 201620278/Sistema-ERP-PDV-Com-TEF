@@ -520,6 +520,65 @@ function showProdutoModal(produto = null) {
                                     </select>
                                 </div>
 
+                                <div class="col-md-6 mb-3 d-flex align-items-end">
+                                    <div class="form-check form-switch">
+                                        <input
+                                            class="form-check-input"
+                                            type="checkbox"
+                                            id="vendido_por_peso"
+                                            ${isEdit && Number(produto.vendido_por_peso || 0) === 1 ? 'checked' : ''}
+                                        >
+                                        <label class="form-check-label" for="vendido_por_peso">
+                                            Produto vendido por peso
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="col-12" id="areaProdutoPeso" style="display:none;">
+                                    <div class="card border-primary mb-3">
+                                        <div class="card-header bg-light">
+                                            <strong>Configuração de venda por peso</strong>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-md-4 mb-3">
+                                                    <label for="peso_total_compra" class="form-label">Peso Total Comprado (KG)</label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.001"
+                                                        class="form-control"
+                                                        id="peso_total_compra"
+                                                        value="${isEdit ? Number(produto.peso_total_compra || 0) : 0}"
+                                                    >
+                                                </div>
+
+                                                <div class="col-md-4 mb-3">
+                                                    <label for="valor_total_compra" class="form-label">Valor Total da Compra</label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        class="form-control"
+                                                        id="valor_total_compra"
+                                                        value="${isEdit ? Number(produto.valor_total_compra || 0) : 0}"
+                                                    >
+                                                </div>
+
+                                                <div class="col-md-4 mb-3">
+                                                    <label for="custo_por_kg" class="form-label">Custo por KG</label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        class="form-control"
+                                                        id="custo_por_kg"
+                                                        readonly
+                                                        value="${isEdit ? Number(produto.custo_por_kg || 0) : 0}"
+                                                    >
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="col-md-4 mb-3">
                                     <label for="preco_compra" class="form-label">Preço de Compra</label>
                                     <input
@@ -826,52 +885,109 @@ function inicializarAutocompleteFornecedor() {
 
 // Inicializa cálculo automático do preço de venda
 function inicializarCalculoPreco(produto, isEdit) {
-    function atualizarPrecoVenda() {
-        const precoCompra = parseFloat($('#preco_compra').val()) || 0;
-        const margem = parseFloat($('#lucro_percentual').val());
+    let atualizando = false;
 
-        if (!isNaN(margem) && margem < 100) {
-            const precoVenda = precoCompra / (1 - (margem / 100));
+    function numero(valor) {
+        return parseFloat(String(valor || '0').replace(',', '.')) || 0;
+    }
 
-            if (isFinite(precoVenda)) {
-                $('#preco_venda').val(precoVenda.toFixed(2));
-            }
+    function produtoPorPesoAtivo() {
+        return $('#vendido_por_peso').is(':checked');
+    }
+
+    function atualizarAreaPeso() {
+        const ativo = produtoPorPesoAtivo();
+
+        $('#areaProdutoPeso').toggle(ativo);
+
+        if (ativo) {
+            $('#unidade').val('kg');
+            calcularCustoPorKg();
         }
     }
 
-    function atualizarLucroPercentual() {
-        const precoCompra = parseFloat($('#preco_compra').val()) || 0;
-        const precoVenda = parseFloat($('#preco_venda').val());
+    function calcularCustoPorKg() {
+        if (!produtoPorPesoAtivo()) return;
 
-        if (!isNaN(precoVenda) && precoVenda > 0) {
-            const margem = (1 - (precoCompra / precoVenda)) * 100;
-            if (isFinite(margem)) {
-                $('#lucro_percentual').val(margem.toFixed(2));
-            }
+        const pesoTotal = numero($('#peso_total_compra').val());
+        const valorTotal = numero($('#valor_total_compra').val());
+
+        if (pesoTotal > 0 && valorTotal > 0) {
+            const custoKg = valorTotal / pesoTotal;
+
+            $('#custo_por_kg').val(custoKg.toFixed(2));
+            $('#preco_compra').val(custoKg.toFixed(2));
+
+            calcularPrecoVendaPorLucro();
         }
     }
 
-    $('#preco_compra').off('input').on('input', function () {
-        const lucroDigitado = parseFloat($('#lucro_percentual').val());
+    function calcularPrecoVendaPorLucro() {
+        if (atualizando) return;
+        atualizando = true;
 
-        if (!isNaN(lucroDigitado)) {
-            atualizarPrecoVenda();
-            return;
+        const precoCompra = numero($('#preco_compra').val());
+        const lucro = numero($('#lucro_percentual').val());
+
+        if (precoCompra > 0) {
+            const precoVenda = precoCompra + (precoCompra * lucro / 100);
+            $('#preco_venda').val(precoVenda.toFixed(2));
         }
 
-        atualizarLucroPercentual();
-    });
+        atualizando = false;
+    }
 
-    $('#lucro_percentual').off('input').on('input', atualizarPrecoVenda);
-    $('#preco_venda').off('input').on('input', atualizarLucroPercentual);
+    function calcularLucroPorPrecoVenda() {
+        if (atualizando) return;
+        atualizando = true;
+
+        const precoCompra = numero($('#preco_compra').val());
+        const precoVenda = numero($('#preco_venda').val());
+
+        if (precoCompra > 0 && precoVenda > 0) {
+            const lucro = ((precoVenda - precoCompra) / precoCompra) * 100;
+            $('#lucro_percentual').val(lucro.toFixed(2));
+        }
+
+        atualizando = false;
+    }
+
+    $('#vendido_por_peso').off('change').on('change', atualizarAreaPeso);
+
+    $('#peso_total_compra, #valor_total_compra')
+        .off('input')
+        .on('input', calcularCustoPorKg);
+
+    $('#preco_compra')
+        .off('input')
+        .on('input', function () {
+            if (produtoPorPesoAtivo()) {
+                $('#custo_por_kg').val(numero($('#preco_compra').val()).toFixed(2));
+            }
+
+            if ($('#lucro_percentual').val() !== '') {
+                calcularPrecoVendaPorLucro();
+            } else {
+                calcularLucroPorPrecoVenda();
+            }
+        });
+
+    $('#lucro_percentual')
+        .off('input')
+        .on('input', calcularPrecoVendaPorLucro);
+
+    $('#preco_venda')
+        .off('input')
+        .on('input', calcularLucroPorPrecoVenda);
+
+    atualizarAreaPeso();
 
     if (isEdit && produto) {
         setTimeout(() => {
-            const lucroDigitado = parseFloat($('#lucro_percentual').val());
-            if (!isNaN(lucroDigitado)) {
-                atualizarPrecoVenda();
+            if ($('#lucro_percentual').val() !== '') {
+                calcularPrecoVendaPorLucro();
             } else {
-                atualizarLucroPercentual();
+                calcularLucroPorPrecoVenda();
             }
         }, 100);
     }
@@ -902,7 +1018,11 @@ function saveProduto() {
         codigo_barras: ($('#codigo_barras').val() || '').trim(),
         aliquota_icms: parseFloat($('#aliquota_icms').val()) || 0,
         aliquota_pis: parseFloat($('#aliquota_pis').val()) || 0,
-        aliquota_cofins: parseFloat($('#aliquota_cofins').val()) || 0
+        aliquota_cofins: parseFloat($('#aliquota_cofins').val()) || 0,
+        vendido_por_peso: $('#vendido_por_peso').is(':checked') ? 1 : 0,
+        peso_total_compra: parseFloat($('#peso_total_compra').val()) || 0,
+        valor_total_compra: parseFloat($('#valor_total_compra').val()) || 0,
+        custo_por_kg: parseFloat($('#custo_por_kg').val()) || 0
     };
 
 
@@ -922,6 +1042,26 @@ function saveProduto() {
         showNotification('Preço de compra inválido.', 'warning');
         $('#preco_compra').focus();
         return;
+    }
+
+    if (data.vendido_por_peso === 1) {
+        if (data.peso_total_compra <= 0) {
+            showNotification('Informe o peso total comprado em KG.', 'warning');
+            $('#peso_total_compra').focus();
+            return;
+        }
+
+        if (data.valor_total_compra <= 0) {
+            showNotification('Informe o valor total da compra.', 'warning');
+            $('#valor_total_compra').focus();
+            return;
+        }
+
+        if (data.custo_por_kg <= 0) {
+            showNotification('Custo por KG inválido.', 'warning');
+            $('#custo_por_kg').focus();
+            return;
+        }
     }
 
     if (data.estoque_atual < 0) {

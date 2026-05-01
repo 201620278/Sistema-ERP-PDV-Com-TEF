@@ -243,6 +243,21 @@ function criarTabelas() {
       else console.log('Tabela produtos criada/verificada');
     });
 
+    const colunasProdutoPeso = [
+      "ALTER TABLE produtos ADD COLUMN vendido_por_peso INTEGER DEFAULT 0",
+      "ALTER TABLE produtos ADD COLUMN peso_total_compra DECIMAL(10,3) DEFAULT 0",
+      "ALTER TABLE produtos ADD COLUMN valor_total_compra DECIMAL(10,2) DEFAULT 0",
+      "ALTER TABLE produtos ADD COLUMN custo_por_kg DECIMAL(10,2) DEFAULT 0"
+    ];
+
+    colunasProdutoPeso.forEach(sql => {
+      db.run(sql, (err) => {
+        if (err && !String(err.message).includes('duplicate column name')) {
+          console.error('Erro ao adicionar coluna de produto por peso:', err.message);
+        }
+      });
+    });
+
     // Tabela de clientes
     db.run(`
       CREATE TABLE IF NOT EXISTS clientes (

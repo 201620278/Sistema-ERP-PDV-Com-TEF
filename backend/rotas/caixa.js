@@ -8,8 +8,25 @@ function n(valor) {
   return Number(valor || 0);
 }
 
+function agoraLocalBrasil() {
+  const agora = new Date();
+
+  const dataBrasil = new Date(
+    agora.toLocaleString('en-US', { timeZone: 'America/Fortaleza' })
+  );
+
+  const ano = dataBrasil.getFullYear();
+  const mes = String(dataBrasil.getMonth() + 1).padStart(2, '0');
+  const dia = String(dataBrasil.getDate()).padStart(2, '0');
+  const hora = String(dataBrasil.getHours()).padStart(2, '0');
+  const min = String(dataBrasil.getMinutes()).padStart(2, '0');
+  const seg = String(dataBrasil.getSeconds()).padStart(2, '0');
+
+  return `${ano}-${mes}-${dia} ${hora}:${min}:${seg}`;
+}
+
 function hoje() {
-  return new Date().toISOString().slice(0, 10);
+  return agoraLocalBrasil().slice(0, 10);
 }
 
 function normalizarForma(forma) {

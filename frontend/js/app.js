@@ -222,25 +222,37 @@ function formatDateTime(dateString) {
         });
 }
 
-function showNotification(message, type = 'success') {
-    const alertClass = type === 'success' ? 'alert-success' : 
-                       type === 'danger' ? 'alert-danger' : 
-                       type === 'warning' ? 'alert-warning' : 'alert-info';
+function showNotification(mensagem, tipo = 'success') {
+    const container = document.getElementById('notification-container');
 
-    const html = `
-        <div class="alert ${alertClass} alert-dismissible fade show position-fixed top-0 end-0 m-3" style="z-index: 9999; min-width: 300px;" role="alert">
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
+    if (!container) return;
+
+    const id = 'notif-' + Date.now();
+
+    const alert = document.createElement('div');
+    alert.id = id;
+    alert.className = `alert alert-${tipo} alert-dismissible fade show`;
+    alert.innerHTML = `
+        ${mensagem}
+        <button type="button" class="btn-close" onclick="fecharNotificacao('${id}')"></button>
     `;
 
-    $('body').append(html);
+    container.appendChild(alert);
 
     setTimeout(() => {
-        $('body > .alert').first().fadeOut('slow', function() {
-            $(this).remove();
-        });
+        fecharNotificacao(id);
     }, 3000);
+}
+
+function fecharNotificacao(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    el.classList.remove('show');
+
+    setTimeout(() => {
+        el.remove();
+    }, 300);
 }
 
 $.ajaxSetup({

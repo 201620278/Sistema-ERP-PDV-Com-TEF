@@ -2,6 +2,23 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database');
 
+function agoraLocalBrasil() {
+  const agora = new Date();
+
+  const dataBrasil = new Date(
+    agora.toLocaleString('en-US', { timeZone: 'America/Fortaleza' })
+  );
+
+  const ano = dataBrasil.getFullYear();
+  const mes = String(dataBrasil.getMonth() + 1).padStart(2, '0');
+  const dia = String(dataBrasil.getDate()).padStart(2, '0');
+  const hora = String(dataBrasil.getHours()).padStart(2, '0');
+  const min = String(dataBrasil.getMinutes()).padStart(2, '0');
+  const seg = String(dataBrasil.getSeconds()).padStart(2, '0');
+
+  return `${ano}-${mes}-${dia} ${hora}:${min}:${seg}`;
+}
+
 // BLOQUEIO DEFINITIVO: não permite venda com caixa fechado
 function bloquearVendaSemCaixaAberto(req, res, next) {
   db.get(`
@@ -210,7 +227,7 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
     }
     // Validar débitos e parcelas vencidas, a menos que forçar esteja ativo
     if (!forcar) {
-      const hoje = moment().format('YYYY-MM-DD');
+      const hoje = agoraLocalBrasil().slice(0, 10);
       db.get(`
         SELECT 
           SUM(CASE WHEN status = 'aberto' THEN valor_restante ELSE 0 END) as total_em_aberto,
@@ -241,8 +258,8 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
     // Função para executar venda a prazo
     executarVendaPrazo();
     function executarVendaPrazo() {
-      const codigo = `VND-${moment().format('YYYYMMDDHHmmss')}`;
-      const data_venda = moment().format('YYYY-MM-DD');
+      const codigo = `VND-${agoraLocalBrasil().replace(/[- :]/g, '').slice(0, 14)}`;
+      const data_venda = agoraLocalBrasil().slice(0, 10);
       db.serialize(() => {
         db.run('BEGIN TRANSACTION');
         db.run(`
@@ -351,8 +368,8 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
 
   // Venda à vista ou crédito antigo
   const executarVenda = () => {
-    const codigo = `VND-${moment().format('YYYYMMDDHHmmss')}`;
-    const data_venda = moment().format('YYYY-MM-DD');
+    const codigo = `VND-${agoraLocalBrasil().replace(/[- :]/g, '').slice(0, 14)}`;
+    const data_venda = agoraLocalBrasil().slice(0, 10);
     db.serialize(() => {
       db.run('BEGIN TRANSACTION');
       db.run(`
