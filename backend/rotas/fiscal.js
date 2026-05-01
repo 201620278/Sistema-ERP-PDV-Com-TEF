@@ -7,6 +7,7 @@ const multer = require('multer');
 const { getFiscalConfig, setConfiguracao } = require('../services/fiscal/configService');
 const { carregarCertificadoPfx } = require('../services/fiscal/certificateService');
 const { emitirPorVendaId } = require('../services/fiscal/emissor');
+const cancelarNfce = require('../services/fiscal/cancelarNfce');
 const { getFiscalSubDir } = require('../services/fiscal/paths');
 
 const pastaCertificados = getFiscalSubDir('certificados');
@@ -130,6 +131,80 @@ router.get('/danfe/venda/:vendaId', (req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(nota.danfe_html);
   });
+});
+
+router.post('/notas/:id/cancelar', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { justificativa } = req.body || {};
+
+    if (!justificativa || justificativa.trim().length < 15) {
+      return res.status(400).json({
+        error: 'A justificativa deve ter no mínimo 15 caracteres.'
+      });
+    }
+
+    db.get(`
+      SELECT *
+      FROM nfce_notas
+      WHERE id = ?
+    `, [id], async (err, nota) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+
+      if (!nota) {
+        return res.status(404).json({ error: 'NFC-e não encontrada.' });
+      }
+
+      if (!String(nota.status || '').toLowerCase().includes('autoriz')) {
+        return res.status(400).json({
+          error: 'Somente NFC-e autorizada pode ser cancelada.'
+        });
+      }
+
+      if (!nota.chave_acesso || !nota.protocolo) {
+        return res.status(400).json({
+          error: 'NFC-e sem chave ou protocolo. Não é possível cancelar.'
+        });
+      }
+
+      try {
+        const retorno = await cancelarNfce({
+          chave: nota.chave_acesso,
+          protocolo: nota.protocolo
+        }, justificativa.trim());
+
+        const retornoTexto = typeof retorno === 'string'
+          ? retorno
+          : JSON.stringify(retorno);
+
+        db.run(`
+          UPDATE nfce_notas
+          SET status = ?,
+              xml_retorno = COALESCE(xml_retorno, '') || char(10) || ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `, ['cancelamento_enviado', retornoTexto, id], (updErr) => {
+          if (updErr) {
+            return res.status(500).json({ error: updErr.message });
+          }
+
+          res.json({
+            success: true,
+            message: 'Cancelamento enviado para a SEFAZ.',
+            retorno
+          });
+        });
+      } catch (cancelErr) {
+        res.status(500).json({
+          error: cancelErr.message
+        });
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 router.get('/notas', (req, res) => {

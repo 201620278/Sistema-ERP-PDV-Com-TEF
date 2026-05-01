@@ -111,6 +111,70 @@ function assinarNFe(xml, chavePrivadaPem, certPem) {
   }
 }
 
+function extrairIdInfEvento(xml) {
+  const match = String(xml || '').match(/<infEvento[^>]*\sId="([^"]+)"/);
+
+  if (!match || !match[1]) {
+    throw new Error('Id da infEvento não encontrado no XML.');
+  }
+
+  return match[1];
+}
+
+function assinarEvento(xml, chavePrivadaPem, certPem) {
+  try {
+    salvarDebug('01-evento-original.xml', xml);
+
+    const idInfEvento = extrairIdInfEvento(xml);
+    const certBase64 = limparCertificadoBase64(certPem);
+
+    const sig = new SignedXml({
+      privateKey: chavePrivadaPem,
+      idAttribute: 'Id',
+      signatureAlgorithm: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+      canonicalizationAlgorithm: 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
+    });
+
+    sig.getKeyInfoContent = () =>
+      `<X509Data><X509Certificate>${certBase64}</X509Certificate></X509Data>`;
+
+    sig.getCertFromKeyInfo = () => null;
+
+    sig.addReference({
+      xpath: `//*[@Id='${idInfEvento}']`,
+      transforms: [
+        'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+        'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
+      ],
+      digestAlgorithm: 'http://www.w3.org/2000/09/xmldsig#sha1'
+    });
+
+    sig.computeSignature(xml, {
+      location: {
+        reference: "//*[local-name(.)='infEvento']",
+        action: 'after'
+      }
+    });
+
+    const xmlAssinado = String(sig.getSignedXml() || '')
+      .replace(/^\s*<\?xml[^>]*\?>\s*/i, '')
+      .trim();
+
+    salvarDebug('02-evento-assinado.xml', xmlAssinado);
+
+    return {
+      xmlAssinado
+    };
+  } catch (erro) {
+    salvarDebug(
+      '99-erro-assinatura-evento.txt',
+      erro && erro.stack ? erro.stack : String(erro)
+    );
+    throw erro;
+  }
+}
+
 module.exports = {
-  assinarNFe
+  assinarNFe,
+  assinarEvento
 };

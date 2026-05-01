@@ -356,9 +356,15 @@ function renderTabelaFiscalNotas() {
                             <td>${n.protocolo || '-'}</td>
                             <td>${formatDateTime(n.created_at)}</td>
                             <td>
-                                <button class="btn btn-sm btn-info" onclick="verDetalheFiscal(${n.id})">
+                                <button class="btn btn-sm btn-info" onclick="verDetalheFiscal(${n.id})" title="Visualizar">
                                     <i class="fas fa-eye"></i>
                                 </button>
+
+                                ${String(n.status || '').toLowerCase().includes('autoriz') ? `
+                                    <button class="btn btn-sm btn-danger ms-1" onclick="cancelarNfce(${n.id})" title="Cancelar NFC-e">
+                                        <i class="fas fa-ban"></i>
+                                    </button>
+                                ` : ''}
                             </td>
                         </tr>
                     `).join('') : `
@@ -515,6 +521,70 @@ function formatPhone(input) {
 }
 
 // Formatar CEP
+function cancelarNfce(id) {
+    const modalHtml = `
+        <div class="modal fade" id="modalCancelarNfce" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title"><i class="fas fa-ban"></i> Cancelar NFC-e #${id}</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label class="form-label fw-bold">Justificativa do cancelamento (mínimo 15 caracteres):</label>
+                        <textarea id="justificativaCancelarNfce" class="form-control" rows="4" maxlength="255" placeholder="Ex: Erro na emissão da nota fiscal..."></textarea>
+                        <div class="form-text text-end"><span id="contarCharsCancelar">0</span>/255</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-danger" id="btnConfirmarCancelarNfce">
+                            <i class="fas fa-ban"></i> Confirmar Cancelamento
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    $('#modal-container').html(modalHtml);
+    const modalEl = document.getElementById('modalCancelarNfce');
+    const modal = new bootstrap.Modal(modalEl);
+
+    const textarea = document.getElementById('justificativaCancelarNfce');
+    const contador = document.getElementById('contarCharsCancelar');
+    textarea.addEventListener('input', () => {
+        contador.textContent = textarea.value.length;
+    });
+
+    document.getElementById('btnConfirmarCancelarNfce').addEventListener('click', () => {
+        const justificativa = textarea.value.trim();
+
+        if (!justificativa || justificativa.length < 15) {
+            showNotification('A justificativa precisa ter no mínimo 15 caracteres.', 'warning');
+            textarea.focus();
+            return;
+        }
+
+        modal.hide();
+
+        $.ajax({
+            url: `${API_URL}/fiscal/notas/${id}/cancelar`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ justificativa }),
+            success: function(resp) {
+                showNotification(resp.message || 'Cancelamento enviado com sucesso.');
+                carregarFiscalNotas();
+            },
+            error: function(xhr) {
+                showNotification(xhr.responseJSON?.error || 'Erro ao cancelar NFC-e.', 'danger');
+            }
+        });
+    });
+
+    modal.show();
+}
+
 function formatCep(input) {
     let value = input.value.replace(/\D/g, '');
     if (value.length <= 8) {
