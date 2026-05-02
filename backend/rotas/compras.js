@@ -387,6 +387,237 @@ function processarItensCompra(compraId, itens, fornecedor, done) {
   next();
 }
 
+function garantirTabelaDevolucoesCompra(callback) {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS compras_devolucoes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      compra_id INTEGER NOT NULL,
+      compra_item_id INTEGER NOT NULL,
+      produto_id INTEGER NOT NULL,
+      quantidade DECIMAL(10,3) NOT NULL,
+      valor_unitario DECIMAL(10,2) NOT NULL,
+      valor_total DECIMAL(10,2) NOT NULL,
+      motivo TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `, callback);
+}
+
+router.post('/:id/devolver', (req, res) => {
+  const compraId = Number(req.params.id);
+  const motivo = String(req.body?.motivo || '').trim();
+  const itens = Array.isArray(req.body?.itens) ? req.body.itens : [];
+
+  if (!motivo || motivo.length < 10) {
+    return res.status(400).json({ error: 'Informe um motivo com no mínimo 10 caracteres.' });
+  }
+
+  const itensValidos = itens
+    .map(i => ({
+      compra_item_id: Number(i.compra_item_id),
+      quantidade: Number(i.quantidade)
+    }))
+    .filter(i => i.compra_item_id > 0 && i.quantidade > 0);
+
+  if (!itensValidos.length) {
+    return res.status(400).json({ error: 'Informe ao menos um item para devolução.' });
+  }
+
+  garantirTabelaDevolucoesCompra((tableErr) => {
+    if (tableErr) return res.status(500).json({ error: tableErr.message });
+
+    db.serialize(() => {
+      db.run('BEGIN TRANSACTION');
+
+      db.get('SELECT * FROM compras WHERE id = ?', [compraId], (compraErr, compra) => {
+        if (compraErr) {
+          db.run('ROLLBACK');
+          return res.status(500).json({ error: compraErr.message });
+        }
+
+        if (!compra) {
+          db.run('ROLLBACK');
+          return res.status(404).json({ error: 'Compra não encontrada.' });
+        }
+
+        if (String(compra.status || '').toLowerCase() === 'cancelada') {
+          db.run('ROLLBACK');
+          return res.status(400).json({ error: 'Compra cancelada não pode receber devolução.' });
+        }
+
+        let index = 0;
+        let valorTotalDevolvido = 0;
+
+        function processarProximo() {
+          if (index >= itensValidos.length) return finalizar();
+
+          const itemReq = itensValidos[index++];
+
+          db.get(`
+            SELECT
+              ci.*,
+              COALESCE(p.nome, ci.descricao_produto) AS produto_nome,
+              COALESCE(p.estoque_atual, 0) AS estoque_atual,
+              COALESCE((
+                SELECT SUM(cd.quantidade)
+                FROM compras_devolucoes cd
+                WHERE cd.compra_item_id = ci.id
+              ), 0) AS quantidade_ja_devolvida
+            FROM compras_itens ci
+            LEFT JOIN produtos p ON p.id = ci.produto_id
+            WHERE ci.id = ? AND ci.compra_id = ?
+          `, [itemReq.compra_item_id, compraId], (itemErr, item) => {
+            if (itemErr) {
+              db.run('ROLLBACK');
+              return res.status(500).json({ error: itemErr.message });
+            }
+
+            if (!item) {
+              db.run('ROLLBACK');
+              return res.status(404).json({ error: 'Item da compra não encontrado.' });
+            }
+
+            const qtdComprada = Number(item.quantidade || 0);
+            const qtdJaDevolvida = Number(item.quantidade_ja_devolvida || 0);
+            const qtdDisponivel = qtdComprada - qtdJaDevolvida;
+            const qtdDevolver = Number(itemReq.quantidade || 0);
+            const estoqueAtual = Number(item.estoque_atual || 0);
+
+            if (qtdDevolver > qtdDisponivel) {
+              db.run('ROLLBACK');
+              return res.status(400).json({
+                error: `Produto "${item.produto_nome}" permite devolver no máximo ${qtdDisponivel}.`
+              });
+            }
+
+            if (estoqueAtual < qtdDevolver) {
+              db.run('ROLLBACK');
+              return res.status(400).json({
+                error: `Estoque insuficiente para devolver "${item.produto_nome}". Estoque atual: ${estoqueAtual}.`
+              });
+            }
+
+            const valorUnitario = Number(item.custo_unitario_final || item.preco_unitario || 0);
+            const valorTotal = Number((qtdDevolver * valorUnitario).toFixed(2));
+            valorTotalDevolvido += valorTotal;
+
+            db.run(`
+              INSERT INTO compras_devolucoes (
+                compra_id, compra_item_id, produto_id, quantidade,
+                valor_unitario, valor_total, motivo
+              ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            `, [
+              compraId,
+              item.id,
+              item.produto_id,
+              qtdDevolver,
+              valorUnitario,
+              valorTotal,
+              motivo
+            ], (insertErr) => {
+              if (insertErr) {
+                db.run('ROLLBACK');
+                return res.status(500).json({ error: insertErr.message });
+              }
+
+              db.run(`
+                UPDATE produtos
+                SET estoque_atual = estoque_atual - ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+              `, [qtdDevolver, item.produto_id], (estoqueErr) => {
+                if (estoqueErr) {
+                  db.run('ROLLBACK');
+                  return res.status(500).json({ error: estoqueErr.message });
+                }
+
+                processarProximo();
+              });
+            });
+          });
+        }
+
+        function finalizar() {
+          db.get(`
+            SELECT COUNT(*) AS itens_pendentes
+            FROM compras_itens ci
+            WHERE ci.compra_id = ?
+              AND ci.quantidade > COALESCE((
+                SELECT SUM(cd.quantidade)
+                FROM compras_devolucoes cd
+                WHERE cd.compra_item_id = ci.id
+              ), 0)
+          `, [compraId], (sumErr, sum) => {
+            if (sumErr) {
+              db.run('ROLLBACK');
+              return res.status(500).json({ error: sumErr.message });
+            }
+
+            const statusNovo = Number(sum.itens_pendentes || 0) === 0
+              ? 'devolvida'
+              : 'devolvida_parcial';
+
+            db.run(`
+              INSERT INTO financeiro (
+                tipo, descricao, valor, data_movimento, categoria, forma_pagamento,
+                referencia_id, referencia_tipo, status, origem, documento,
+                vencimento, compra_id, pessoa_nome, observacao
+              ) VALUES (?, ?, ?, DATE('now','localtime'), ?, ?, ?, ?, ?, ?, ?, DATE('now','localtime'), ?, ?, ?)
+            `, [
+              'receita',
+              `Crédito de devolução da compra ${compraId}`,
+              Number(valorTotalDevolvido.toFixed(2)),
+              'devolucao_compra',
+              null,
+              compraId,
+              'devolucao_compra',
+              'pendente',
+              'devolucao_compra',
+              null,
+              compraId,
+              compra.fornecedor || null,
+              motivo
+            ], (finErr) => {
+              if (finErr) {
+                db.run('ROLLBACK');
+                return res.status(500).json({ error: finErr.message });
+              }
+
+              db.run(`
+                UPDATE compras
+                SET status = ?,
+                    observacao = COALESCE(observacao, '') || ?
+                WHERE id = ?
+              `, [
+                statusNovo,
+                ` | Devolução: ${motivo}`,
+                compraId
+              ], (upErr) => {
+                if (upErr) {
+                  db.run('ROLLBACK');
+                  return res.status(500).json({ error: upErr.message });
+                }
+
+                db.run('COMMIT');
+                res.json({
+                  success: true,
+                  message: statusNovo === 'devolvida'
+                    ? 'Compra devolvida totalmente.'
+                    : 'Devolução parcial registrada com sucesso.',
+                  status_compra: statusNovo,
+                  valor_devolvido: Number(valorTotalDevolvido.toFixed(2))
+                });
+              });
+            });
+          });
+        }
+
+        processarProximo();
+      });
+    });
+  });
+});
+
 router.get('/', (req, res) => {
   db.all(`
     SELECT c.*, 
@@ -407,7 +638,15 @@ router.get('/:id', (req, res) => {
     if (!compra) return res.status(404).json({ error: 'Compra não encontrada.' });
 
     db.all(`
-      SELECT ci.*, COALESCE(p.nome, ci.descricao_produto) as produto_nome, p.codigo as produto_codigo
+      SELECT
+        ci.*,
+        COALESCE(p.nome, ci.descricao_produto) AS produto_nome,
+        p.codigo AS produto_codigo,
+        COALESCE((
+          SELECT SUM(cd.quantidade)
+          FROM compras_devolucoes cd
+          WHERE cd.compra_item_id = ci.id
+        ), 0) AS quantidade_devolvida
       FROM compras_itens ci
       LEFT JOIN produtos p ON ci.produto_id = p.id
       WHERE ci.compra_id = ?

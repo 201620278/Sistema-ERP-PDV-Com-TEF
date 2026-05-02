@@ -53,8 +53,17 @@ function renderCompras(compras) {
                                     <td>${rotuloFormaPagamento(c.forma_pagamento)}</td>
                                     <td>${c.parcelas_pendentes || 0}</td>
                                     <td>
-                                        <button class="btn btn-sm btn-info" onclick="viewCompra(${c.id})"><i class="fas fa-eye"></i></button>
-                                        <button class="btn btn-sm btn-warning" onclick="cancelarCompra(${c.id})"><i class="fas fa-ban"></i></button>
+                                        <button class="btn btn-sm btn-info" onclick="viewCompra(${c.id})" title="Visualizar">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+
+                                        <button class="btn btn-sm btn-secondary" onclick="abrirDevolucaoCompra(${c.id})" title="Devolver compra">
+                                            <i class="fas fa-undo"></i>
+                                        </button>
+
+                                        <button class="btn btn-sm btn-warning" onclick="cancelarCompra(${c.id})" title="Cancelar compra">
+                                            <i class="fas fa-ban"></i>
+                                        </button>
                                     </td>
                                 </tr>
                             `).join('') || '<tr><td colspan="8" class="text-center">Nenhuma compra registrada.</td></tr>'}
@@ -898,21 +907,66 @@ function viewCompra(id) {
 }
 
 function cancelarCompra(id) {
-    const motivo = prompt('Informe o motivo do cancelamento da compra:', 'Cancelamento manual');
-    if (!motivo) return;
+    const modalHtml = `
+        <div class="modal fade" id="modalCancelarCompra" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning text-dark">
+                        <h5 class="modal-title"><i class="fas fa-ban"></i> Cancelar Compra #${id}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            O sistema vai baixar o estoque e cancelar o financeiro desta compra.
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Motivo do cancelamento</label>
+                            <textarea id="motivoCancelarCompra" class="form-control" rows="3"
+                                placeholder="Informe o motivo do cancelamento...">Cancelamento manual</textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Voltar</button>
+                        <button type="button" class="btn btn-danger" id="btnConfirmarCancelarCompra">
+                            <i class="fas fa-ban"></i> Confirmar Cancelamento
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
 
-    if (!confirm('Confirmar cancelamento? O sistema vai baixar o estoque e cancelar o financeiro desta compra.')) return;
+    $('#modalCancelarCompra').remove();
+    $('body').append(modalHtml);
 
-    $.ajax({
-        url: `${API_URL}/compras/${id}/cancelar`,
-        method: 'POST',
-        contentType: 'application/json',
-        data: JSON.stringify({ motivo })
-    }).done(function() {
-        showNotification('Compra cancelada com sucesso!', 'success');
-        loadCompras();
-    }).fail(function(xhr) {
-        showNotification(xhr.responseJSON?.error || 'Erro ao cancelar compra.', 'danger');
+    const modal = new bootstrap.Modal(document.getElementById('modalCancelarCompra'));
+    modal.show();
+
+    document.getElementById('btnConfirmarCancelarCompra').addEventListener('click', function() {
+        const motivo = $('#motivoCancelarCompra').val().trim();
+        if (!motivo) {
+            showNotification('Informe o motivo do cancelamento.', 'warning');
+            return;
+        }
+
+        modal.hide();
+
+        $.ajax({
+            url: `${API_URL}/compras/${id}/cancelar`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ motivo })
+        }).done(function() {
+            showNotification('Compra cancelada com sucesso!', 'success');
+            loadCompras();
+        }).fail(function(xhr) {
+            showNotification(xhr.responseJSON?.error || 'Erro ao cancelar compra.', 'danger');
+        });
+    });
+
+    document.getElementById('modalCancelarCompra').addEventListener('hidden.bs.modal', function() {
+        $('#modalCancelarCompra').remove();
     });
 }
 
@@ -988,4 +1042,162 @@ function preencherFormularioCompra(data) {
     // Pagamento padrão
     $('#condicao_pagamento').val('avista');
     atualizarVisibilidadePagamentoCompra();
+}
+
+function abrirDevolucaoCompra(id) {
+    $.ajax({
+        url: `${API_URL}/compras/${id}`,
+        method: 'GET'
+    }).done(function(compra) {
+        const itens = compra.itens || [];
+
+        const linhas = itens.map(item => {
+            const qtdComprada = Number(item.quantidade || 0);
+            const qtdDevolvida = Number(item.quantidade_devolvida || 0);
+            const qtdDisponivel = Math.max(0, qtdComprada - qtdDevolvida);
+
+            return `
+                <tr>
+                    <td>
+                        <strong>${escapeHtml(item.produto_nome || '-')}</strong><br>
+                        <small>Cód: ${escapeHtml(item.produto_codigo || item.codigo_barras || '-')}</small>
+                    </td>
+                    <td>${qtdComprada}</td>
+                    <td>${qtdDevolvida}</td>
+                    <td><strong>${qtdDisponivel}</strong></td>
+                    <td>${formatCurrency(item.custo_unitario_final || item.preco_unitario || 0)}</td>
+                    <td>
+                        <input
+                            type="number"
+                            class="form-control form-control-sm qtd-devolver-compra"
+                            data-item-id="${item.id}"
+                            min="0"
+                            max="${qtdDisponivel}"
+                            step="0.001"
+                            value="0"
+                            ${qtdDisponivel <= 0 ? 'disabled' : ''}
+                        >
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        const modalHtml = `
+            <div class="modal fade" id="modalDevolucaoCompra" tabindex="-1">
+                <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header bg-secondary text-white">
+                            <h5 class="modal-title">
+                                <i class="fas fa-undo"></i> Devolução da Compra #${compra.id}
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <div class="alert alert-warning">
+                                Esta devolução é interna: baixa estoque e gera crédito no financeiro.
+                                A emissão fiscal SEFAZ modelo 55 será a próxima etapa.
+                            </div>
+
+                            <p><strong>Fornecedor:</strong> ${escapeHtml(compra.fornecedor || '-')}</p>
+                            <p><strong>Total da compra:</strong> ${formatCurrency(compra.total)}</p>
+
+                            <div class="mb-3">
+                                <label class="form-label">Motivo da devolução</label>
+                                <textarea id="motivoDevolucaoCompra" class="form-control" rows="3"
+                                    placeholder="Ex: Produto veio errado, danificado ou diferente do solicitado."></textarea>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>Produto</th>
+                                            <th>Comprada</th>
+                                            <th>Já devolvida</th>
+                                            <th>Disponível</th>
+                                            <th>Custo</th>
+                                            <th>Qtd devolver</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${linhas || '<tr><td colspan="6" class="text-center">Nenhum item encontrado.</td></tr>'}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                            <button class="btn btn-danger" onclick="confirmarDevolucaoCompra(${compra.id})">
+                                Confirmar devolução
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        $('#modalDevolucaoCompra').remove();
+        $('body').append(modalHtml);
+        $('#modalDevolucaoCompra').modal('show');
+
+        $('#modalDevolucaoCompra').on('hidden.bs.modal', function () {
+            $('#modalDevolucaoCompra').remove();
+        });
+    }).fail(function(xhr) {
+        showNotification(xhr.responseJSON?.error || 'Erro ao carregar compra.', 'danger');
+    });
+}
+
+function confirmarDevolucaoCompra(id) {
+    const motivo = $('#motivoDevolucaoCompra').val().trim();
+
+    if (!motivo || motivo.length < 10) {
+        showNotification('Informe um motivo com no mínimo 10 caracteres.', 'warning');
+        return;
+    }
+
+    const itens = [];
+
+    $('.qtd-devolver-compra').each(function() {
+        const quantidade = Number($(this).val() || 0);
+        const compraItemId = Number($(this).data('item-id'));
+        const max = Number($(this).attr('max') || 0);
+
+        if (quantidade > max) {
+            showNotification('Quantidade devolvida maior que a disponível.', 'warning');
+            itens.length = 0;
+            return false;
+        }
+
+        if (quantidade > 0) {
+            itens.push({
+                compra_item_id: compraItemId,
+                quantidade
+            });
+        }
+    });
+
+    if (!itens.length) {
+        showNotification('Informe a quantidade de pelo menos um item para devolver.', 'warning');
+        return;
+    }
+
+    if (!confirm('Confirma a devolução parcial/total dos itens selecionados?')) {
+        return;
+    }
+
+    $.ajax({
+        url: `${API_URL}/compras/${id}/devolver`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ motivo, itens })
+    }).done(function(resp) {
+        showNotification(resp.message || 'Devolução registrada com sucesso.', 'success');
+        $('#modalDevolucaoCompra').modal('hide');
+        loadCompras();
+    }).fail(function(xhr) {
+        showNotification(xhr.responseJSON?.error || 'Erro ao registrar devolução.', 'danger');
+    });
 }
