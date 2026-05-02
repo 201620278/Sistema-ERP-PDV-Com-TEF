@@ -1,149 +1,122 @@
-<div class="pdv-container container-fluid" style="max-width: 100vw; min-height: 100vh; overflow-x: hidden;">
-    <div class="row g-3 align-items-start">
-        <div class="col-lg-3 col-md-4 col-12">
-            <div class="pdv-header text-center mb-3" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; border-radius: 10px; padding: 15px;">
-                <h2 style="font-size: 1.6rem; margin-bottom: 0;">ESQUINAO DA ECONOMIA</h2>
-                <div style="font-size: 1rem;">Operador: <span id="operador-nome"></span></div>
-                <div id="data-hora" style="font-size: 0.95rem;"></div>
-            </div>
+<div class="pdv-profissional">
 
-            <div class="card p-3 mb-3">
-                <label for="codigo-barra" class="fw-bold">Leitor de Código de Barras</label>
-                <input type="text" class="form-control mb-2" id="codigo-barra" placeholder="Código ou nome do produto" autocomplete="off">
-                <small class="text-muted">
-                    F1: Consulta de preços | ESC: Fechar | Enter: Buscar
-                </small>
-
-                <div class="row g-1">
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="7" style="padding: 6px 0; font-size: 1rem;">7</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="8" style="padding: 6px 0; font-size: 1rem;">8</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="9" style="padding: 6px 0; font-size: 1rem;">9</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="C" style="padding: 6px 0; font-size: 1rem;">C</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="4" style="padding: 6px 0; font-size: 1rem;">4</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="5" style="padding: 6px 0; font-size: 1rem;">5</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="6" style="padding: 6px 0; font-size: 1rem;">6</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="/" style="padding: 6px 0; font-size: 1rem;">/</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="1" style="padding: 6px 0; font-size: 1rem;">1</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="2" style="padding: 6px 0; font-size: 1rem;">2</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="3" style="padding: 6px 0; font-size: 1rem;">3</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="*" style="padding: 6px 0; font-size: 1rem;">*</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="0" style="padding: 6px 0; font-size: 1rem;">0</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="." style="padding: 6px 0; font-size: 1rem;">.</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="=" style="padding: 6px 0; font-size: 1rem;">=</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="+" style="padding: 6px 0; font-size: 1rem;">+</button></div>
-                    <div class="col-3 mb-1"><button type="button" class="btn btn-light w-100 calc-btn" data-value="-" style="padding: 6px 0; font-size: 1rem;">-</button></div>
-                </div>
-
-                <button type="button" class="btn btn-success w-100 mt-2" id="buscar-produto">Adicionar Item</button>
-            </div>
-        </div>
-
-        <div class="col-lg-9 col-md-8 col-12">
-            <div class="card mb-3">
-                <div class="card-header fw-bold">
-                    Carrinho de Compras
-                    <button type="button" class="btn btn-sm btn-danger float-end" id="limpar-carrinho">Limpar Carrinho</button>
-                </div>
-                <div class="card-body p-2">
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-sm mb-0 align-middle">
-                            <thead>
-                                <tr>
-                                    <th>Item</th>
-                                    <th style="width: 110px;">Qtd</th>
-                                    <th>Preço Unit.</th>
-                                    <th>Subtotal</th>
-                                    <th style="width: 90px;">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody id="carrinho-itens"></tbody>
-                            <tfoot>
-                                <tr>
-                                    <td colspan="3" class="text-end"><strong>Subtotal:</strong></td>
-                                    <td colspan="2"><strong id="subtotal">R$ 0,00</strong></td>
-                                </tr>
-                                <tr>
-                                    <td colspan="3" class="text-end">
-                                        <strong>Desconto:</strong>
-                                        <input type="number" id="desconto" class="form-control form-control-sm d-inline-block ms-2" style="width: 120px;" value="0" step="0.01" min="0">
-                                    </td>
-                                    <td colspan="2"><strong id="total">R$ 0,00</strong></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card p-3 mb-3">
-                <label for="formaPagamento" class="form-label fw-bold">Forma de pagamento *</label>
-                <select id="formaPagamento" class="form-select" onchange="aoAlterarFormaPagamento()">
-                    <option value="">-- Selecionar --</option>
-                    <option value="dinheiro">Dinheiro</option>
-                    <option value="pix">Pix</option>
-                    <option value="cartao_credito">Cartão de Crédito</option>
-                    <option value="cartao_debito">Cartão de Débito</option>
-                    <option value="prazo">A Prazo</option>
-                </select>
-
-                <div class="mt-3" id="pdvDinheiroBox" style="display:none;">
-                    <div class="row g-2">
-                        <div class="col-md-6">
-                            <label for="valorRecebidoPDV" class="form-label fw-bold">Valor recebido</label>
-                            <input
-                                type="number"
-                                class="form-control"
-                                id="valorRecebidoPDV"
-                                min="0"
-                                step="0.01"
-                                placeholder="0,00"
-                            >
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">Troco</label>
-                            <div class="form-control bg-light fw-bold text-success" id="trocoPDV">
-                                R$ 0,00
-                            </div>
-                        </div>
-                    </div>
-                    <small class="text-muted">Informe o valor recebido para calcular o troco automaticamente.</small>
-                </div>
-
-                <div class="pdv-cliente-box mt-3" id="pdvClienteBox" style="display:none;">
-                    <div class="d-flex flex-wrap align-items-start gap-2 mb-2">
-                        <label for="clienteBusca" class="form-label mb-0">Cliente (obrigatório para venda a prazo)</label>
-                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="abrirCadastroCliente()">+ Novo Cliente</button>
-                    </div>
-                    <div class="row g-2 mb-2">
-                        <div class="col-md-7">
-                            <label for="clienteBusca" class="form-label mb-1">Cliente *</label>
-                            <input type="text" class="form-control" id="clienteBusca" placeholder="Digite nome, CPF ou telefone">
-                        </div>
-                        <div class="col-md-5">
-                            <label for="data-recebimento-prazo" class="form-label mb-1">Data de recebimento *</label>
-                            <input type="date" class="form-control" id="data-recebimento-prazo">
-                        </div>
-                    </div>
-                    <div id="clienteResultados" class="cliente-resultados"></div>
-
-                    <div id="clienteSelecionado" class="cliente-selecionado mt-3" style="display:none;">
-                        <strong>Cliente selecionado:</strong>
-                        <span id="clienteSelecionadoNome"></span>
-                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="removerClienteSelecionado()">Remover</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="row g-2">
-                <div class="col-md-6 col-12">
-                    <button type="button" class="btn btn-danger w-100" id="cancelar-venda">Cancelar Venda</button>
-                </div>
-                <div class="col-md-6 col-12">
-                    <button type="button" class="btn btn-success w-100" id="finalizar-venda">Finalizar Venda</button>
-                </div>
-            </div>
-        </div>
+  <header class="pdv-topo">
+    <div>
+      <h1>MERCADÃO DA ECONOMIA</h1>
+      <span>PDV - Frente de Caixa</span>
     </div>
+
+    <div class="pdv-status">
+      <span id="statusCaixaPdv" class="caixa-aberto">🟢 Caixa Aberto</span>
+      <span id="operadorPdv">Operador: Admin</span>
+      <span id="dataHoraPdv"></span>
+    </div>
+  </header>
+
+  <main class="pdv-grid">
+
+    <section class="pdv-card pdv-busca">
+      <h2>Buscar Produto</h2>
+
+      <input 
+        type="text" 
+        id="buscaProdutoPdv" 
+        placeholder="Código de barras ou nome do produto"
+        autocomplete="off"
+      >
+
+      <button id="btnBuscarProdutoPdv">Buscar</button>
+
+      <div id="listaProdutosPdv" class="lista-produtos">
+        <p class="vazio">Digite para buscar produtos...</p>
+      </div>
+    </section>
+
+    <section class="pdv-card pdv-itens">
+      <div class="pdv-card-header">
+        <h2>Itens da Venda</h2>
+        <button id="btnLimparVendaPdv" class="btn-secundario">Limpar</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Qtd</th>
+            <th>Produto</th>
+            <th>Valor</th>
+            <th>Total</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tabelaItensVendaPdv">
+          <tr>
+            <td colspan="5" class="vazio">Nenhum item adicionado</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <aside class="pdv-card pdv-resumo">
+      <h2>Resumo</h2>
+
+      <div class="linha-resumo">
+        <span>Subtotal</span>
+        <strong id="subtotalPdv">R$ 0,00</strong>
+      </div>
+
+      <div class="linha-resumo">
+        <span>Desconto</span>
+        <input type="number" id="descontoPdv" value="0" min="0" step="0.01">
+      </div>
+
+      <div class="linha-resumo">
+        <span>Acréscimo</span>
+        <input type="number" id="acrescimoPdv" value="0" min="0" step="0.01">
+      </div>
+
+      <div class="total-pdv">
+        <span>Total</span>
+        <strong id="totalPdv">R$ 0,00</strong>
+      </div>
+
+      <label>Forma de pagamento</label>
+      <select id="formaPagamentoPdv">
+        <option value="">-- Selecionar --</option>
+        <option value="dinheiro">Dinheiro</option>
+        <option value="pix">Pix</option>
+        <option value="cartao_debito">Cartão Débito</option>
+        <option value="cartao_credito">Cartão Crédito</option>
+        <option value="prazo">A Prazo</option>
+      </select>
+
+      <div id="pdvDinheiroBox" style="display:none;">
+        <div class="linha-resumo">
+          <span>Valor recebido</span>
+          <input type="number" id="valorRecebidoPDV" value="" min="0" step="0.01" placeholder="ex: 20,00">
+        </div>
+        <div class="linha-resumo">
+          <span>Troco</span>
+          <strong id="trocoPDV">R$ 0,00</strong>
+        </div>
+      </div>
+
+      <button id="btnFinalizarVendaPdv" class="btn-finalizar">
+        Finalizar Venda
+      </button>
+
+      <button id="btnCancelarVendaPdv" class="btn-cancelar">
+        Cancelar Venda
+      </button>
+    </aside>
+
+  </main>
+
+  <footer class="pdv-atalhos">
+    <span>F2 Buscar</span>
+    <span>F4 Quantidade</span>
+    <span>F8 Desconto</span>
+    <span>F10 Finalizar</span>
+    <span>ESC Cancelar</span>
+  </footer>
+
 </div>
-<div id="modal-container"></div>

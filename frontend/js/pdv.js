@@ -50,7 +50,7 @@ function inicializarPDV() {
 
 function focarCampoCodigo() {
     setTimeout(() => {
-        const input = $('#codigo-barra');
+        const input = $('#buscaProdutoPdv');
         if (input.length) input.trigger('focus');
     }, 120);
 }
@@ -89,7 +89,7 @@ function bindEventosPDV() {
         }
     });
 
-    $('#codigo-barra').off('keypress').on('keypress', function(e) {
+    $('#buscaProdutoPdv').off('keypress').on('keypress', function(e) {
         if (e.which === 13) {
             const codigo = $(this).val().trim();
             if (codigo) {
@@ -99,22 +99,22 @@ function bindEventosPDV() {
         }
     });
 
-    $('#buscar-produto').off('click').on('click', function() {
-        const codigo = $('#codigo-barra').val().trim();
+    $('#btnBuscarProdutoPdv').off('click').on('click', function() {
+        const codigo = $('#buscaProdutoPdv').val().trim();
         if (codigo) {
             adicionarProdutoPorCodigo(codigo);
-            $('#codigo-barra').val('');
+            $('#buscaProdutoPdv').val('');
         } else {
             showNotification('Digite ou bip o código do produto.', 'warning');
         }
         focarCampoCodigo();
     });
 
-    $('#limpar-carrinho').off('click').on('click', limparCarrinho);
-    $('#cancelar-venda').off('click').on('click', cancelarVendaAtual);
-    $('#finalizar-venda').off('click').on('click', abrirModalDecisaoFiscal);
-    $('#formaPagamento').off('change').on('change', aoAlterarFormaPagamento);
-    $('#formaPagamento').val('');
+    $('#btnLimparVendaPdv').off('click').on('click', limparCarrinho);
+    $('#btnCancelarVendaPdv').off('click').on('click', cancelarVendaAtual);
+    $('#btnFinalizarVendaPdv').off('click').on('click', abrirModalDecisaoFiscal);
+    $('#formaPagamentoPdv').off('change').on('change', aoAlterarFormaPagamento);
+    $('#formaPagamentoPdv').val('');
     $('#clienteBusca').off('input').on('input', async function () {
         const termo = $(this).val().trim();
         if (termo.length < 2) {
@@ -148,7 +148,7 @@ function bindEventosPDV() {
 
     $('.calc-btn').off('click').on('click', function() {
         const valor = String($(this).data('value'));
-        const input = $('#codigo-barra');
+        const input = $('#buscaProdutoPdv');
         const atual = input.val();
 
         if (valor === 'C') {
@@ -166,7 +166,7 @@ function bindEventosPDV() {
         input.trigger('focus');
     });
 
-    $('#desconto').off('input').on('input', function() {
+    $('#descontoPdv').off('input').on('input', function() {
         calcularTotal();
         calcularTrocoPDV();
     });
@@ -177,7 +177,7 @@ function bindEventosPDV() {
 }
 
 function aoAlterarFormaPagamento() {
-    const formaPagamento = $('#formaPagamento').val();
+    const formaPagamento = $('#formaPagamentoPdv').val();
     const boxCliente = $('#pdvClienteBox');
     const boxDinheiro = $('#pdvDinheiroBox');
 
@@ -268,7 +268,6 @@ function renderCarrinhoItens() {
 
     return carrinho.map((item, index) => `
         <tr>
-            <td>${escapeHtml(item.nome)}</td>
             <td>
                 <input type="number"
                        class="form-control form-control-sm quantidade-item"
@@ -277,6 +276,7 @@ function renderCarrinhoItens() {
                        step="0.001"
                        data-index="${index}">
             </td>
+            <td>${escapeHtml(item.nome)}</td>
             <td>${formatCurrency(item.preco_unitario)}</td>
             <td>${formatCurrency(item.subtotal)}</td>
             <td class="text-center">
@@ -507,31 +507,38 @@ function limparCarrinho() {
     carrinho = [];
     formaPagamentoSelecionada = null;
     vendaPrazoInfo = null;
-    $('#desconto').val(0);
+    $('#descontoPdv').val(0);
     atualizarCarrinho();
     focarCampoCodigo();
     showNotification('Carrinho limpo com sucesso.', 'info');
 }
 
 function atualizarCarrinho() {
-    const tbody = $('#carrinho-itens');
+    const tbody = $('#tabelaItensVendaPdv');
     if (tbody.length) {
         tbody.html(renderCarrinhoItens());
 
-        $('.quantidade-item').off('change').on('change', function() {
-            atualizarQuantidade(Number($(this).data('index')), $(this).val());
+        tbody.off('click').on('click', '.item-remover', function() {
+            const index = $(this).data('index');
+            removerItemCarrinho(index);
         });
 
-        $('.item-remover').off('click').on('click', function() {
-            removerItemCarrinho(Number($(this).data('index')));
+        tbody.off('change').on('change', '.quantidade-item', function() {
+            const index = $(this).data('index');
+            let novaQtd = parseFloat($(this).val());
+            if (isNaN(novaQtd) || novaQtd <= 0) {
+                removerItemCarrinho(index);
+            } else {
+                alterarQuantidadeItem(index, novaQtd);
+            }
         });
     }
 
     calcularTotal();
 
     const total = calcularTotalValor();
-    $('#finalizar-venda').prop('disabled', carrinho.length === 0 || total <= 0);
-    $('#cancelar-venda').prop('disabled', carrinho.length === 0);
+    $('#btnFinalizarVendaPdv').prop('disabled', carrinho.length === 0 || total <= 0);
+    $('#btnCancelarVendaPdv').prop('disabled', carrinho.length === 0);
 }
 
 function calcularSubtotal() {
@@ -540,15 +547,15 @@ function calcularSubtotal() {
 
 function calcularTotalValor() {
     const subtotal = calcularSubtotal();
-    const desconto = parseFloat($('#desconto').val()) || 0;
+    const desconto = parseFloat($('#descontoPdv').val()) || 0;
     return Math.max(0, subtotal - desconto);
 }
 
 function calcularTotal() {
     const subtotal = calcularSubtotal();
     const total = calcularTotalValor();
-    $('#subtotal').text(formatCurrency(subtotal));
-    $('#total').text(formatCurrency(total));
+    $('#subtotalPdv').text(formatCurrency(subtotal));
+    $('#totalPdv').text(formatCurrency(total));
 
     calcularTrocoPDV();
 }
@@ -647,7 +654,7 @@ function abrirModalPagamento(onConfirm) {
 
     $('#valor-recebido').off('input').on('input', calcularTroco);
 
-    const formaPagamentoAtual = $('#formaPagamento').val();
+    const formaPagamentoAtual = $('#formaPagamentoPdv').val();
     if (formaPagamentoAtual === 'dinheiro') {
         setTimeout(() => selecionarPagamento('dinheiro'), 0);
     }
@@ -803,14 +810,14 @@ function abrirModalDecisaoFiscal(skipPagamento = false) {
         return;
     }
 
-    const formaPagamento = $('#formaPagamento').val();
+    const formaPagamento = $('#formaPagamentoPdv').val();
 
     if (!formaPagamento) {
         showNotification('Selecione uma forma de pagamento.', 'warning');
         return;
     }
 
-    const desconto = parseFloat($('#desconto').val()) || 0;
+    const desconto = parseFloat($('#descontoPdv').val()) || 0;
     const subtotal = calcularSubtotal();
     const total = Math.round((Math.max(0, subtotal - desconto)) * 100) / 100;
 
@@ -967,7 +974,7 @@ function executarFinalizacaoVenda(emitirFiscal = false) {
         return;
     }
 
-    const formaPagamento = $('#formaPagamento').val();
+    const formaPagamento = $('#formaPagamentoPdv').val();
 
     if (!formaPagamento) {
         showNotification('Selecione uma forma de pagamento.', 'warning');
@@ -1091,8 +1098,8 @@ function finalizarPosVenda() {
     formaPagamentoSelecionada = null;
     clienteSelecionado = null;
     vendaPrazoInfo = null;
-    $('#desconto').val(0);
-    $('#formaPagamento').val('');
+    $('#descontoPdv').val(0);
+    $('#formaPagamentoPdv').val('');
     $('#valorRecebidoPDV').val('');
     $('#trocoPDV').text('R$ 0,00');
     aoAlterarFormaPagamento();
@@ -1130,8 +1137,8 @@ function cancelarVendaAtual() {
     formaPagamentoSelecionada = null;
     clienteSelecionado = null;
     vendaPrazoInfo = null;
-    $('#desconto').val(0);
-    $('#formaPagamento').val('');
+    $('#descontoPdv').val(0);
+    $('#formaPagamentoPdv').val('');
     $('#valorRecebidoPDV').val('');
     $('#trocoPDV').text('R$ 0,00');
     aoAlterarFormaPagamento();
@@ -1816,3 +1823,36 @@ function adicionarProdutoConsultaPDV(idProduto) {
         adicionarItemNoCarrinho(produto, quantidade, Number(produto.preco_venda || 0));
     });
 }
+
+function atualizarDataHoraPdv() {
+  const el = document.getElementById("dataHoraPdv");
+  if (!el) return;
+
+  const agora = new Date();
+  el.textContent = agora.toLocaleString("pt-BR");
+}
+
+setInterval(atualizarDataHoraPdv, 1000);
+atualizarDataHoraPdv();
+
+document.addEventListener("DOMContentLoaded", () => {
+  const busca = document.getElementById("buscaProdutoPdv");
+  if (busca) busca.focus();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "F2") {
+    e.preventDefault();
+    document.getElementById("buscaProdutoPdv")?.focus();
+  }
+
+  if (e.key === "F10") {
+    e.preventDefault();
+    document.getElementById("btnFinalizarVendaPdv")?.click();
+  }
+
+  if (e.key === "Escape") {
+    e.preventDefault();
+    document.getElementById("btnCancelarVendaPdv")?.click();
+  }
+});

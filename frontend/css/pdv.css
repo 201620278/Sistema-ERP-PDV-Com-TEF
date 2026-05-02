@@ -1,0 +1,247 @@
+.pdv-profissional {
+  min-height: 100vh;
+  background: #f3f5f7;
+  padding: 16px;
+  color: #1f2937;
+}
+
+.pdv-topo {
+  background: #111827;
+  color: white;
+  padding: 18px 22px;
+  border-radius: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.15);
+}
+
+.pdv-topo h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.pdv-topo span {
+  font-size: 14px;
+  opacity: .9;
+}
+
+.pdv-status {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.caixa-aberto {
+  background: #16a34a;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-weight: bold;
+}
+
+.caixa-fechado {
+  background: #dc2626;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-weight: bold;
+}
+
+.pdv-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr 330px;
+  gap: 16px;
+}
+
+.pdv-card {
+  background: white;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.08);
+  border: 1px solid #e5e7eb;
+}
+
+.pdv-card h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+}
+
+.pdv-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pdv-busca input,
+.pdv-resumo input,
+.pdv-resumo select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 15px;
+  margin-bottom: 10px;
+}
+
+.pdv-busca button,
+.btn-finalizar,
+.btn-cancelar,
+.btn-secundario {
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.pdv-busca button {
+  width: 100%;
+  background: #2563eb;
+  color: white;
+}
+
+.lista-produtos {
+  margin-top: 12px;
+  max-height: 430px;
+  overflow-y: auto;
+}
+
+.produto-item-pdv {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.produto-item-pdv:hover {
+  background: #eff6ff;
+  border-color: #2563eb;
+}
+
+.produto-item-pdv strong {
+  display: block;
+}
+
+.produto-item-pdv span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.pdv-itens table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.pdv-itens th {
+  background: #f1f5f9;
+  padding: 12px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.pdv-itens td {
+  padding: 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.vazio {
+  color: #64748b;
+  text-align: center;
+}
+
+.linha-resumo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  gap: 10px;
+}
+
+.linha-resumo input {
+  max-width: 130px;
+  margin-bottom: 0;
+}
+
+.total-pdv {
+  background: #111827;
+  color: white;
+  border-radius: 14px;
+  padding: 18px;
+  margin: 18px 0;
+}
+
+.total-pdv span {
+  display: block;
+  font-size: 14px;
+  opacity: .8;
+}
+
+.total-pdv strong {
+  display: block;
+  font-size: 36px;
+  margin-top: 6px;
+}
+
+.pdv-resumo label {
+  font-weight: bold;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.btn-finalizar {
+  width: 100%;
+  background: #16a34a;
+  color: white;
+  font-size: 17px;
+  margin-top: 12px;
+}
+
+.btn-cancelar {
+  width: 100%;
+  background: #dc2626;
+  color: white;
+  margin-top: 10px;
+}
+
+.btn-secundario {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.pdv-atalhos {
+  margin-top: 16px;
+  background: white;
+  padding: 12px 16px;
+  border-radius: 14px;
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0,0,0,.06);
+}
+
+.pdv-atalhos span {
+  font-weight: bold;
+  color: #334155;
+}
+
+@media (max-width: 1100px) {
+  .pdv-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pdv-topo {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+}
+
+/* Troco destacado */
+#trocoPDV {
+  color: #16a34a;
+  font-size: 32px;
+  font-weight: bold;
+}

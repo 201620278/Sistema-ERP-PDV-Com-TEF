@@ -38,6 +38,7 @@ function renderCompras(compras) {
                                 <th>Total</th>
                                 <th>Condição</th>
                                 <th>Forma</th>
+                                <th>Status</th>
                                 <th>Pendências</th>
                                 <th>Ações</th>
                             </tr>
@@ -51,14 +52,19 @@ function renderCompras(compras) {
                                     <td>${formatCurrency(c.total)}</td>
                                     <td>${rotuloCondicaoPagamento(c.condicao_pagamento || 'avista')}</td>
                                     <td>${rotuloFormaPagamento(c.forma_pagamento)}</td>
+                                    <td>${formatBadgeStatusCompra(c.status)}</td>
                                     <td>${c.parcelas_pendentes || 0}</td>
                                     <td>
                                         <button class="btn btn-sm btn-info" onclick="viewCompra(${c.id})" title="Visualizar">
                                             <i class="fas fa-eye"></i>
                                         </button>
 
-                                        <button class="btn btn-sm btn-secondary" onclick="abrirDevolucaoCompra(${c.id})" title="Devolver compra">
+                                        <button class="btn btn-sm btn-secondary" onclick="abrirDevolucaoCompra(${c.id})" title="Devolução interna">
                                             <i class="fas fa-undo"></i>
+                                        </button>
+
+                                        <button class="btn btn-sm btn-danger" onclick="abrirModalNFeDevolucaoCompra(${c.id})" title="NF-e devolução SEFAZ">
+                                            <i class="fas fa-file-invoice"></i>
                                         </button>
 
                                         <button class="btn btn-sm btn-warning" onclick="cancelarCompra(${c.id})" title="Cancelar compra">
@@ -66,7 +72,7 @@ function renderCompras(compras) {
                                         </button>
                                     </td>
                                 </tr>
-                            `).join('') || '<tr><td colspan="8" class="text-center">Nenhuma compra registrada.</td></tr>'}
+                            `).join('') || '<tr><td colspan="9" class="text-center">Nenhuma compra registrada.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
@@ -74,6 +80,16 @@ function renderCompras(compras) {
         </div>
     `;
     $('#page-content').html(html);
+}
+
+function formatBadgeStatusCompra(status) {
+    const badges = {
+        'normal': '<span class="badge bg-success">Normal</span>',
+        'devolvida_parcial': '<span class="badge bg-warning text-dark"><i class="fas fa-undo"></i> Devolvido Parcial</span>',
+        'devolvida': '<span class="badge bg-danger"><i class="fas fa-undo"></i> Devolvido Total</span>',
+        'cancelada': '<span class="badge bg-secondary"><i class="fas fa-ban"></i> Cancelada</span>'
+    };
+    return badges[status] || '<span class="badge bg-success">Normal</span>';
 }
 
 function rotuloCondicaoPagamento(value) {
@@ -1200,4 +1216,205 @@ function confirmarDevolucaoCompra(id) {
     }).fail(function(xhr) {
         showNotification(xhr.responseJSON?.error || 'Erro ao registrar devolução.', 'danger');
     });
+}
+
+function abrirModalNFeDevolucaoCompra(id) {
+    $.ajax({
+        url: `${API_URL}/compras/${id}`,
+        method: 'GET'
+    }).done(function(compra) {
+        const itens = compra.itens || [];
+
+        const itensDevolvidos = itens.filter(item => Number(item.quantidade_devolvida || 0) > 0);
+
+        const linhas = itensDevolvidos.map(item => `
+            <tr>
+                <td>${escapeHtml(item.produto_nome || item.descricao_produto || '-')}</td>
+                <td>${Number(item.quantidade_devolvida || 0)}</td>
+                <td>${formatCurrency(item.custo_unitario_final || item.preco_unitario || 0)}</td>
+                <td>${formatCurrency(Number(item.quantidade_devolvida || 0) * Number(item.custo_unitario_final || item.preco_unitario || 0))}</td>
+            </tr>
+        `).join('');
+
+        const chaveAtual = String(compra.chave_acesso || '').replace(/\D/g, '');
+
+        const modalHtml = `
+            <div class="modal fade" id="modalNFeDevolucaoCompra" tabindex="-1">
+                <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title">
+                                <i class="fas fa-file-invoice"></i> NF-e de Devolução SEFAZ - Compra #${compra.id}
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <div class="alert alert-warning">
+                                Antes de emitir para a SEFAZ, registre primeiro a <strong>devolução interna</strong>.
+                                A NF-e de devolução será emitida somente para os itens já devolvidos.
+                            </div>
+
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <strong>Fornecedor:</strong><br>
+                                    ${escapeHtml(compra.fornecedor || '-')}
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>Total da compra:</strong><br>
+                                    ${formatCurrency(compra.total)}
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>Status:</strong><br>
+                                    ${escapeHtml(compra.status || '-')}
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    Chave de acesso da NF-e original do fornecedor
+                                </label>
+                                <input
+                                    type="text"
+                                    id="chaveNFeFornecedorDevolucao"
+                                    class="form-control"
+                                    maxlength="44"
+                                    placeholder="Digite ou cole a chave de 44 dígitos"
+                                    value="${escapeHtml(chaveAtual)}"
+                                >
+                                <small class="text-muted">
+                                    Obrigatório para emitir NF-e de devolução. Deve conter 44 dígitos.
+                                </small>
+                            </div>
+
+                            <h6>Itens já devolvidos internamente</h6>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>Produto</th>
+                                            <th>Qtd devolvida</th>
+                                            <th>Valor unitário</th>
+                                            <th>Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${linhas || '<tr><td colspan="4" class="text-center text-danger">Nenhum item devolvido internamente. Faça primeiro a devolução interna.</td></tr>'}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" data-bs-dismiss="modal">
+                                Fechar
+                            </button>
+
+                            <button class="btn btn-primary" onclick="salvarChaveNFeFornecedor(${compra.id})">
+                                Salvar chave
+                            </button>
+
+                            <button
+                                class="btn btn-danger"
+                                onclick="confirmarEmissaoNFeDevolucaoCompra(${compra.id})"
+                                ${itensDevolvidos.length === 0 ? 'disabled' : ''}
+                            >
+                                Emitir NF-e devolução SEFAZ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        $('#modalNFeDevolucaoCompra').remove();
+        $('body').append(modalHtml);
+        $('#modalNFeDevolucaoCompra').modal('show');
+
+        $('#modalNFeDevolucaoCompra').on('hidden.bs.modal', function () {
+            $('#modalNFeDevolucaoCompra').remove();
+        });
+    }).fail(function(xhr) {
+        showNotification(xhr.responseJSON?.error || 'Erro ao carregar compra.', 'danger');
+    });
+}
+
+function salvarChaveNFeFornecedor(id) {
+    const chave = String($('#chaveNFeFornecedorDevolucao').val() || '').replace(/\D/g, '');
+
+    if (chave.length !== 44) {
+        showNotification('A chave da NF-e precisa ter 44 dígitos.', 'warning');
+        return;
+    }
+
+    $.ajax({
+        url: `${API_URL}/compras/${id}/chave-nfe-fornecedor`,
+        method: 'PUT',
+        contentType: 'application/json',
+        data: JSON.stringify({ chave })
+    }).done(function(resp) {
+        showNotification(resp.message || 'Chave salva com sucesso.', 'success');
+    }).fail(function(xhr) {
+        showNotification(xhr.responseJSON?.error || 'Erro ao salvar chave.', 'danger');
+    });
+}
+
+function confirmarEmissaoNFeDevolucaoCompra(id) {
+    const chave = String($('#chaveNFeFornecedorDevolucao').val() || '').replace(/\D/g, '');
+
+    if (chave.length !== 44) {
+        showNotification('Salve uma chave de NF-e válida com 44 dígitos antes de emitir.', 'warning');
+        return;
+    }
+
+    if (!confirm('Confirma a emissão da NF-e modelo 55 de devolução para a SEFAZ?')) {
+        return;
+    }
+
+    salvarChaveNFeFornecedor(id);
+
+    setTimeout(function() {
+        $.ajax({
+            url: `${API_URL}/compras/${id}/emitir-nfe-devolucao`,
+            method: 'POST',
+            contentType: 'application/json'
+        }).done(function(resp) {
+            showNotification(resp.message || 'NF-e de devolução emitida.', 'success');
+            console.log('Retorno NF-e devolução:', resp);
+
+            $('#modalNFeDevolucaoCompra').modal('hide');
+            loadCompras();
+        }).fail(function(xhr) {
+            const resposta = xhr.responseJSON || { respostaBruta: xhr.responseText };
+
+            console.error('RETORNO COMPLETO SEFAZ:', resposta);
+            console.error('STATUS:', xhr.status);
+            console.error('DATA:', resposta);
+
+            const motivo =
+                resposta?.xMotivo ||
+                resposta?.motivo ||
+                resposta?.retorno?.xMotivo ||
+                resposta?.retorno?.xmotivo ||
+                resposta?.erro ||
+                resposta?.mensagem ||
+                resposta?.error ||
+                'Motivo não informado pelo backend.';
+
+            const cStat =
+                resposta?.cStat ||
+                resposta?.retorno?.cStat ||
+                resposta?.statusSefaz ||
+                '';
+
+            alert(
+                `NF-e de devolução rejeitada pela SEFAZ.\n\n` +
+                `cStat: ${cStat || 'não informado'}\n` +
+                `Motivo: ${motivo}`
+            );
+
+            showNotification(xhr.responseJSON?.error || 'Erro ao emitir NF-e de devolução.', 'danger');
+        });
+    }, 500);
 }

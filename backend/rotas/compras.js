@@ -5,6 +5,7 @@ const moment = require('moment');
 const multer = require('multer');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const { emitirNFeDevolucaoCompra } = require('../services/fiscal/nfeDevolucaoCompra');
 
 function agoraLocalBrasil() {
   const agora = new Date();
@@ -1053,6 +1054,58 @@ router.post('/parse-xml', upload.single('xml'), (req, res) => {
     } catch (parseErr) {
       res.status(400).json({ error: 'Erro ao extrair dados do XML: ' + parseErr.message });
     }
+  });
+});
+
+router.post('/:id/emitir-nfe-devolucao', async (req, res) => {
+  try {
+    const compraId = Number(req.params.id);
+
+    const resultado = await emitirNFeDevolucaoCompra(compraId);
+
+    if (!resultado.success && resultado.status === 'rejeitada') {
+      return res.status(400).json({
+        sucesso: false,
+        autorizado: false,
+        mensagem: 'NF-e de devolução rejeitada pela SEFAZ.',
+        cStat: resultado.cStat,
+        xMotivo: resultado.xMotivo,
+        retornoSefaz: resultado.retorno,
+        resultado
+      });
+    }
+
+    res.json({
+      message: resultado.success
+        ? 'NF-e de devolução autorizada com sucesso.'
+        : 'NF-e de devolução enviada/processada.',
+      resultado
+    });
+  } catch (error) {
+    console.error('Erro ao emitir NF-e de devolução:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/:id/chave-nfe-fornecedor', (req, res) => {
+  const id = Number(req.params.id);
+  const chave = String(req.body?.chave || '').replace(/\D/g, '');
+
+  if (chave.length !== 44) {
+    return res.status(400).json({ error: 'A chave da NF-e deve ter 44 dígitos.' });
+  }
+
+  db.run(`
+    UPDATE compras
+    SET chave_acesso = ?
+    WHERE id = ?
+  `, [chave, id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+
+    res.json({
+      success: true,
+      message: 'Chave da NF-e original salva com sucesso.'
+    });
   });
 });
 
