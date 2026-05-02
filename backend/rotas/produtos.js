@@ -138,6 +138,51 @@ router.get('/relatorio-estoque', (req, res) => {
   });
 });
 
+// CONSULTA DE PRODUTOS NO PDV - F1
+router.get('/consulta-pdv/buscar', (req, res) => {
+  const termo = String(req.query.q || '').trim();
+
+  if (!termo) {
+    return res.json([]);
+  }
+
+  const buscaLike = `%${termo}%`;
+  const buscaNumero = termo.replace(/\D/g, '') || termo;
+
+  db.all(`
+    SELECT
+      id,
+      codigo,
+      codigo_barras,
+      nome,
+      unidade,
+      preco_venda,
+      estoque_atual,
+      estoque_minimo,
+      vendido_por_peso
+    FROM produtos
+    WHERE
+      CAST(id AS TEXT) = ?
+      OR codigo LIKE ?
+      OR codigo_barras LIKE ?
+      OR nome LIKE ?
+    ORDER BY nome ASC
+    LIMIT 30
+  `, [
+    buscaNumero,
+    buscaLike,
+    buscaLike,
+    buscaLike
+  ], (err, rows) => {
+    if (err) {
+      console.error('Erro na consulta de produtos PDV:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+
+    res.json(rows || []);
+  });
+});
+
 // Buscar produto por ID trazendo o nome da categoria
 // Buscar produto por ID trazendo o nome da categoria e subcategoria
 router.get('/:id', (req, res) => {

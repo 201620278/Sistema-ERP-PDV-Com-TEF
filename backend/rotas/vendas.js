@@ -77,8 +77,27 @@ function responderVendaComFiscal(res, payload) {
     });
 }
 
-// Listar todas as vendas
+// Listar vendas com busca
 router.get('/', (req, res) => {
+  const busca = String(req.query.busca || '').trim();
+
+  let where = '';
+  const params = [];
+
+  if (busca) {
+    where = `
+      WHERE
+        v.id LIKE ?
+        OR v.codigo LIKE ?
+        OR c.nome LIKE ?
+        OR v.forma_pagamento LIKE ?
+        OR v.status LIKE ?
+    `;
+
+    const termo = `%${busca}%`;
+    params.push(termo, termo, termo, termo, termo);
+  }
+
   db.all(`
     SELECT
       v.id,
@@ -98,8 +117,9 @@ router.get('/', (req, res) => {
       ) AS total_itens
     FROM vendas v
     LEFT JOIN clientes c ON c.id = v.cliente_id
+    ${where}
     ORDER BY datetime(v.created_at) DESC, v.id DESC
-  `, [], (err, rows) => {
+  `, params, (err, rows) => {
     if (err) {
       console.error('Erro ao listar vendas:', err);
       return res.status(500).json({ error: err.message });
@@ -647,6 +667,55 @@ router.put('/:id/cancelar', (req, res) => {
               finalizarCancelamento();
             }
           });
+        });
+      });
+    });
+  });
+});
+
+// Excluir venda
+router.delete('/:id', (req, res) => {
+  const id = Number(req.params.id);
+
+  db.get(`
+    SELECT *
+    FROM vendas
+    WHERE id = ?
+  `, [id], (err, venda) => {
+
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+
+    if (!venda) {
+      return res.status(404).json({ error: 'Venda não encontrada' });
+    }
+
+    if (venda.nfce_id) {
+      return res.status(400).json({
+        error: 'Venda fiscal não pode ser excluída. Cancele a NFC-e primeiro.'
+      });
+    }
+
+    db.run(`
+      DELETE FROM vendas_itens WHERE venda_id = ?
+    `, [id], (errItens) => {
+
+      if (errItens) {
+        return res.status(500).json({ error: errItens.message });
+      }
+
+      db.run(`
+        DELETE FROM vendas WHERE id = ?
+      `, [id], (errVenda) => {
+
+        if (errVenda) {
+          return res.status(500).json({ error: errVenda.message });
+        }
+
+        res.json({
+          success: true,
+          message: 'Venda excluída com sucesso'
         });
       });
     });

@@ -1,7 +1,14 @@
 let vendasList = [];
+let termoBuscaVendas = '';
 
 function loadVendas() {
-    $.ajax({ url: `${API_URL}/vendas`, method: 'GET' })
+    let url = `${API_URL}/vendas`;
+
+    if (termoBuscaVendas) {
+        url += `?busca=${encodeURIComponent(termoBuscaVendas)}`;
+    }
+
+    $.ajax({ url, method: 'GET' })
         .done(function(vendas) {
             vendasList = vendas || [];
             renderVendas(vendasList);
@@ -9,6 +16,17 @@ function loadVendas() {
         .fail(function() {
             $('#page-content').html('<div class="alert alert-danger">Erro ao carregar histórico de vendas.</div>');
         });
+}
+
+function buscarVendasHistorico() {
+    termoBuscaVendas = $('#buscaHistoricoVendas').val().trim();
+    loadVendas();
+}
+
+function limparBuscaVendasHistorico() {
+    termoBuscaVendas = '';
+    $('#buscaHistoricoVendas').val('');
+    loadVendas();
 }
 
 function renderVendas(vendas) {
@@ -19,6 +37,27 @@ function renderVendas(vendas) {
                 <button class="btn btn-primary btn-sm" onclick="loadVendas()"><i class="fas fa-sync"></i> Atualizar</button>
             </div>
             <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-8">
+                        <input
+                            type="text"
+                            id="buscaHistoricoVendas"
+                            class="form-control"
+                            placeholder="Buscar por ID, código, cliente, forma de pagamento ou status..."
+                            value="${escapeHtml(termoBuscaVendas)}"
+                            onkeydown="if(event.key === 'Enter') buscarVendasHistorico()"
+                        >
+                    </div>
+                    <div class="col-md-4 d-flex gap-2">
+                        <button class="btn btn-success" onclick="buscarVendasHistorico()">
+                            <i class="fas fa-search"></i> Buscar
+                        </button>
+                        <button class="btn btn-secondary" onclick="limparBuscaVendasHistorico()">
+                            <i class="fas fa-times"></i> Limpar
+                        </button>
+                    </div>
+                </div>
+
                 <div class="table-responsive">
                     <table class="table table-striped table-hover">
                         <thead>
@@ -47,7 +86,7 @@ function renderVendas(vendas) {
                                         <button class="btn btn-sm btn-info" onclick="viewVenda(${v.id})"><i class="fas fa-eye"></i></button>
                                     </td>
                                 </tr>
-                            `).join('') || '<tr><td colspan="8" class="text-center">Nenhuma venda registrada.</td></tr>'}
+                            `).join('') || '<tr><td colspan="8" class="text-center">Nenhuma venda encontrada.</td></tr>'}
                         </tbody>
                     </table>
                 </div>

@@ -81,6 +81,14 @@ function atualizarDataHora() {
 }
 
 function bindEventosPDV() {
+    $(document).off('keydown.pdvF1').on('keydown.pdvF1', function(e) {
+        if (e.key === 'F1') {
+            e.preventDefault();
+            e.stopPropagation();
+            abrirConsultaProdutosPDV();
+        }
+    });
+
     $('#codigo-barra').off('keypress').on('keypress', function(e) {
         if (e.which === 13) {
             const codigo = $(this).val().trim();
@@ -1601,4 +1609,210 @@ function confirmarQuantidadeProduto(produto, callback, modal) {
     if (typeof callback === 'function') {
         callback(quantidade);
     }
+}
+
+// =======================================================
+// CONSULTA DE PRODUTOS NO PDV - F1
+// =======================================================
+
+function abrirConsultaProdutosPDV() {
+    $('#modalConsultaProdutosPDV').remove();
+
+    const modalHtml = `
+        <div class="modal fade" id="modalConsultaProdutosPDV" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title">
+                            <i class="fas fa-search"></i> Consulta de Produtos - F1
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <div class="alert alert-info py-2 mb-3">
+                            Use esta tela apenas para consultar preço/estoque. Clique em <strong>Adicionar</strong> somente se quiser mandar o produto para o carrinho.
+                        </div>
+
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">
+                                <i class="fas fa-barcode"></i>
+                            </span>
+                            <input
+                                type="text"
+                                id="inputConsultaProdutoPDV"
+                                class="form-control form-control-lg"
+                                placeholder="Buscar por nome, código, código de barras ou ID..."
+                                autocomplete="off"
+                            >
+                            <button class="btn btn-primary" type="button" onclick="buscarProdutosConsultaPDV()">
+                                Buscar
+                            </button>
+                        </div>
+
+                        <div id="resultadoConsultaProdutosPDV">
+                            <div class="text-muted text-center py-4">
+                                Digite o nome, código ou ID do produto para consultar.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <small class="text-muted me-auto">
+                            ESC fecha a consulta. Enter busca o produto.
+                        </small>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            Voltar ao PDV
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    $('body').append(modalHtml);
+
+    const modalEl = document.getElementById('modalConsultaProdutosPDV');
+    const modal = new bootstrap.Modal(modalEl);
+
+    modal.show();
+
+    modalEl.addEventListener('shown.bs.modal', function () {
+        $('#inputConsultaProdutoPDV').trigger('focus');
+    });
+
+    $('#inputConsultaProdutoPDV').off('keydown').on('keydown', function (e) {
+        if (e.key === 'Enter') {
+            buscarProdutosConsultaPDV();
+        }
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', function () {
+        $('#modalConsultaProdutosPDV').remove();
+        focarCampoCodigo();
+    });
+}
+
+function buscarProdutosConsultaPDV() {
+    const termo = $('#inputConsultaProdutoPDV').val().trim();
+
+    if (!termo) {
+        $('#resultadoConsultaProdutosPDV').html(`
+            <div class="alert alert-warning">Digite algo para buscar.</div>
+        `);
+        return;
+    }
+
+    $('#resultadoConsultaProdutosPDV').html(`
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary"></div>
+            <div class="mt-2">Buscando produtos...</div>
+        </div>
+    `);
+
+    $.ajax({
+        url: `${API_URL}/produtos/consulta-pdv/buscar?q=${encodeURIComponent(termo)}`,
+        method: 'GET',
+        cache: false,
+        success: function (produtos) {
+            renderizarProdutosConsultaPDV(produtos || []);
+        },
+        error: function (xhr) {
+            console.error('Erro na consulta de produtos:', xhr.responseJSON || xhr.responseText || xhr);
+
+            const msg = xhr.responseJSON?.error || 'Erro ao consultar produtos.';
+
+            $('#resultadoConsultaProdutosPDV').html(`
+                <div class="alert alert-danger">
+                    ${msg}
+                </div>
+            `);
+        }
+    });
+}
+
+function renderizarProdutosConsultaPDV(produtos) {
+    if (!produtos.length) {
+        $('#resultadoConsultaProdutosPDV').html(`
+            <div class="alert alert-warning">
+                Nenhum produto encontrado.
+            </div>
+        `);
+        return;
+    }
+
+    const linhas = produtos.map(p => {
+        const estoque = Number(p.estoque_atual || 0);
+        const preco = Number(p.preco_venda || 0);
+        const estoqueBaixo = estoque <= Number(p.estoque_minimo || 0);
+        const semEstoque = estoque <= 0;
+
+        return `
+            <tr>
+                <td>${p.id}</td>
+                <td>
+                    <strong>${escapeHtml(p.nome)}</strong><br>
+                    <small class="text-muted">
+                        Código: ${escapeHtml(p.codigo || '-')} |
+                        Barras: ${escapeHtml(p.codigo_barras || '-')}
+                    </small>
+                </td>
+                <td>${escapeHtml(p.unidade || 'UN')}</td>
+                <td class="fw-bold text-success">${formatCurrency(preco)}</td>
+                <td>
+                    <span class="badge ${semEstoque ? 'bg-danger' : estoqueBaixo ? 'bg-warning text-dark' : 'bg-success'}">
+                        ${estoque}
+                    </span>
+                </td>
+                <td class="text-end">
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-success"
+                        ${semEstoque ? 'disabled' : ''}
+                        onclick="adicionarProdutoConsultaPDV(${p.id})"
+                    >
+                        <i class="fas fa-cart-plus"></i> Adicionar
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    $('#resultadoConsultaProdutosPDV').html(`
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Produto</th>
+                        <th>Un.</th>
+                        <th>Preço</th>
+                        <th>Estoque</th>
+                        <th class="text-end">Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${linhas}
+                </tbody>
+            </table>
+        </div>
+    `);
+}
+
+function adicionarProdutoConsultaPDV(idProduto) {
+    const produto = produtosDisponiveis.find(p => Number(p.id) === Number(idProduto));
+
+    if (!produto) {
+        showNotification('Produto não encontrado na lista do PDV. Atualize o PDV e tente novamente.', 'danger');
+        return;
+    }
+
+    if (Number(produto.estoque_atual || 0) <= 0) {
+        showNotification('Produto sem estoque.', 'warning');
+        return;
+    }
+
+    abrirModalQuantidadeProduto(produto, function (quantidade) {
+        adicionarItemNoCarrinho(produto, quantidade, Number(produto.preco_venda || 0));
+    });
 }
