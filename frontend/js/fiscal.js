@@ -1,8 +1,14 @@
 let fiscalNotasCache = [];
+let verTodasNotasFiscais = false;
 
 function loadFiscal() {
     renderFiscal();
     carregarFiscalConfig();
+    carregarFiscalNotas();
+}
+
+function toggleVerTodasNotasFiscais() {
+    verTodasNotasFiscais = !verTodasNotasFiscais;
     carregarFiscalNotas();
 }
 
@@ -49,7 +55,7 @@ function renderFiscal() {
                     </div>
 
                     <div class="tab-pane fade" id="fiscal-notas-tab">
-                        <div class="row g-2 mb-3">
+                        <div class="row g-2 mb-3 align-items-center">
                             <div class="col-md-4">
                                 <input type="text" id="fiscalBuscaNota" class="form-control" placeholder="Buscar por chave, venda ou protocolo" oninput="renderTabelaFiscalNotas()">
                             </div>
@@ -66,6 +72,12 @@ function renderFiscal() {
                                 <button class="btn btn-primary w-100" onclick="carregarFiscalNotas()">
                                     <i class="fas fa-rotate-right"></i> Atualizar Notas
                                 </button>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-check-label text-nowrap" style="font-size:14px;">
+                                    <input type="checkbox" class="form-check-input me-1" id="verTodasNotasFiscaisCheck" onchange="toggleVerTodasNotasFiscais()" ${verTodasNotasFiscais ? 'checked' : ''}>
+                                    Ver todas
+                                </label>
                             </div>
                         </div>
                         <div id="fiscal-notas-area"></div>
@@ -300,8 +312,12 @@ function uploadCertificadoFiscal() {
 }
 
 function carregarFiscalNotas() {
+    let url = `${API_URL}/fiscal/notas`;
+    if (verTodasNotasFiscais) {
+        url += '?todas=1';
+    }
     $.ajax({
-        url: `${API_URL}/fiscal/notas`,
+        url: url,
         method: 'GET',
         success: function(notas) {
             fiscalNotasCache = Array.isArray(notas) ? notas : [];

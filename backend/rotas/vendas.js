@@ -80,22 +80,31 @@ function responderVendaComFiscal(res, payload) {
 // Listar vendas com busca
 router.get('/', (req, res) => {
   const busca = String(req.query.busca || '').trim();
+  const todas = req.query.todas === '1';
 
   let where = '';
   const params = [];
 
   if (busca) {
     where = `
-      WHERE
+      WHERE (
         v.id LIKE ?
         OR v.codigo LIKE ?
         OR c.nome LIKE ?
         OR v.forma_pagamento LIKE ?
         OR v.status LIKE ?
+      )
     `;
 
     const termo = `%${busca}%`;
     params.push(termo, termo, termo, termo, termo);
+  }
+
+  if (!todas) {
+    const dataHoje = agoraLocalBrasil().split(' ')[0];
+    where += (where ? ' AND ' : ' WHERE ');
+    where += ` DATE(v.created_at) = ? `;
+    params.push(dataHoje);
   }
 
   db.all(`

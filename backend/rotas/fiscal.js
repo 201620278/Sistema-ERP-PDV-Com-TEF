@@ -12,6 +12,20 @@ const { getFiscalSubDir } = require('../services/fiscal/paths');
 
 const pastaCertificados = getFiscalSubDir('certificados');
 
+function agoraLocalBrasil() {
+  const agora = new Date();
+  const dataBrasil = new Date(
+    agora.toLocaleString('en-US', { timeZone: 'America/Fortaleza' })
+  );
+  const ano = dataBrasil.getFullYear();
+  const mes = String(dataBrasil.getMonth() + 1).padStart(2, '0');
+  const dia = String(dataBrasil.getDate()).padStart(2, '0');
+  const hora = String(dataBrasil.getHours()).padStart(2, '0');
+  const min = String(dataBrasil.getMinutes()).padStart(2, '0');
+  const seg = String(dataBrasil.getSeconds()).padStart(2, '0');
+  return `${ano}-${mes}-${dia} ${hora}:${min}:${seg}`;
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, pastaCertificados);
@@ -270,12 +284,23 @@ justificativa: ${justificativa.trim()}
 });
 
 router.get('/notas', (req, res) => {
+  const todas = req.query.todas === '1';
+  const params = [];
+  let where = '';
+
+  if (!todas) {
+    const dataHoje = agoraLocalBrasil().split(' ')[0];
+    where = ' WHERE DATE(n.created_at) = ? ';
+    params.push(dataHoje);
+  }
+
   db.all(`
     SELECT n.*, v.codigo as venda_codigo, v.total as venda_total
     FROM nfce_notas n
     LEFT JOIN vendas v ON v.id = n.venda_id
+    ${where}
     ORDER BY n.id DESC
-  `, [], (err, rows) => {
+  `, params, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows || []);
   });

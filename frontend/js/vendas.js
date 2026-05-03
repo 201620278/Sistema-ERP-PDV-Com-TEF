@@ -1,11 +1,19 @@
 let vendasList = [];
 let termoBuscaVendas = '';
+let verTodasVendas = false;
 
 function loadVendas() {
     let url = `${API_URL}/vendas`;
+    const params = [];
 
     if (termoBuscaVendas) {
-        url += `?busca=${encodeURIComponent(termoBuscaVendas)}`;
+        params.push(`busca=${encodeURIComponent(termoBuscaVendas)}`);
+    }
+    if (verTodasVendas) {
+        params.push('todas=1');
+    }
+    if (params.length) {
+        url += '?' + params.join('&');
     }
 
     $.ajax({ url, method: 'GET' })
@@ -29,12 +37,23 @@ function limparBuscaVendasHistorico() {
     loadVendas();
 }
 
+function toggleVerTodasVendas() {
+    verTodasVendas = !verTodasVendas;
+    loadVendas();
+}
+
 function renderVendas(vendas) {
     const html = `
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <div><i class="fas fa-receipt"></i> Histórico de Vendas</div>
-                <button class="btn btn-primary btn-sm" onclick="loadVendas()"><i class="fas fa-sync"></i> Atualizar</button>
+                <div class="d-flex gap-2 align-items-center">
+                    <label class="form-check-label text-nowrap" style="font-size:14px;">
+                        <input type="checkbox" class="form-check-input me-1" id="verTodasVendasCheck" onchange="toggleVerTodasVendas()" ${verTodasVendas ? 'checked' : ''}>
+                        Ver todas
+                    </label>
+                    <button class="btn btn-primary btn-sm" onclick="loadVendas()"><i class="fas fa-sync"></i> Atualizar</button>
+                </div>
             </div>
             <div class="card-body">
                 <div class="row mb-3">
