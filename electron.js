@@ -10,26 +10,6 @@ app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-software-rasterizer');
 app.commandLine.appendSwitch('disable-features', 'UseSkiaRenderer');
 
-// 🎯 FOCO EXTREMO - Previne perda de foco na janela
-app.commandLine.appendSwitch('disable-background-timer-throttling');
-app.commandLine.appendSwitch('disable-renderer-backgrounding');
-app.commandLine.appendSwitch('force-fieldtrials', '*');
-
-// Quando o app ganha foco, força a janela a ficar ativa
-app.on('browser-window-focus', () => {
-  console.log('App ganhou foco');
-});
-
-app.on('browser-window-blur', () => {
-  console.log('App perdeu foco - tentando recuperar...');
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    setTimeout(() => {
-      mainWindow.focus();
-      mainWindow.webContents.focus();
-    }, 100);
-  }
-});
-
 let mainWindow;
 
 function obterPortaServidor() {
@@ -228,49 +208,42 @@ function createWindow(serverPort) {
     skipTaskbar: false,
     webPreferences: {
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
     }
   });
 
-  // Forçar foco da janela quando ela for mostrada
-  mainWindow.on('show', () => {
-    mainWindow.focus();
-    mainWindow.webContents.focus();
-  });
-
-  // Foco agressivo quando DOM estiver pronto
-  mainWindow.webContents.on('dom-ready', () => {
-    mainWindow.focus();
-    mainWindow.webContents.focus();
-    console.log('DOM ready - foco forçado');
-  });
-
-  // Restaurar foco quando a janela é restaurada
-  mainWindow.on('restore', () => {
-    mainWindow.focus();
-    mainWindow.webContents.focus();
-    // Forçar reflow no frontend
-    mainWindow.webContents.executeJavaScript(`
-      document.body.style.display = 'none';
-      document.body.offsetHeight;
-      document.body.style.display = '';
-    `);
-  });
-
-  // Forçar foco quando janela ganha foco
-  mainWindow.on('focus', () => {
-    mainWindow.webContents.focus();
-  });
-
-  // Detectar quando perde foco e tentar recuperar
-  mainWindow.on('blur', () => {
-    console.log('Janela perdeu foco');
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused()) {
-        mainWindow.focus();
-        mainWindow.webContents.focus();
+  // Interceptar window.open para criar comprovantes como janelas sempre no topo
+  mainWindow.webContents.setWindowOpenHandler(() => {
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        width: 420,
+        height: 720,
+        title: 'Comprovante',
+        alwaysOnTop: true,
+        autoHideMenuBar: true,
+        parent: mainWindow,
+        modal: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true
+        }
       }
-    }, 100);
+    };
+  });
+
+  // Detectar quando janela filha é criada via window.open (cupom)
+  mainWindow.webContents.on('did-create-window', (childWindow) => {
+    console.log('Janela filha criada via window.open');
+    childWindow.setAlwaysOnTop(true);
+    childWindow.focus();
+  });
+
+  // Foco inicial apenas - quando janela está pronta para mostrar
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
   });
 
   // IPC para forçar reflow quando solicitado pelo frontend
@@ -286,13 +259,32 @@ function createWindow(serverPort) {
     }
   });
 
-  ipcMain.on('focar-janela', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.focus();
-      mainWindow.webContents.focus();
-      mainWindow.moveTop();
-      console.log('Janela focada via IPC');
-    }
+  // IPC para abrir comprovante em nova janela que fica na frente
+  ipcMain.on('abrir-comprovante', (event, html) => {
+    const cupomWindow = new BrowserWindow({
+      width: 420,
+      height: 720,
+      title: 'Comprovante',
+      parent: mainWindow,
+      modal: false,
+      show: false,
+      alwaysOnTop: true,
+      autoHideMenuBar: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
+      }
+    });
+    cupomWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    cupomWindow.once('ready-to-show', () => {
+      cupomWindow.show();
+      cupomWindow.focus();
+    });
+    setTimeout(() => {
+      if (!cupomWindow.isDestroyed()) {
+        cupomWindow.webContents.print({ silent: false });
+      }
+    }, 800);
   });
 
   esperarServidor(`${baseUrl}/ping`)
@@ -303,29 +295,6 @@ function createWindow(serverPort) {
       mainWindow.maximize();
       mainWindow.show();
 
-      // HACK EXTREMO: Foco agressivo usando alwaysOnTop temporário
-      mainWindow.setAlwaysOnTop(true);
-      setTimeout(() => mainWindow.setAlwaysOnTop(false), 200);
-
-      // Garantir foco após mostrar - sequência robusta
-      [50, 100, 200, 300, 500, 800, 1000, 1500, 2000].forEach(delay => {
-        setTimeout(() => {
-          mainWindow.focus();
-          mainWindow.webContents.focus();
-          if (delay === 200) mainWindow.moveTop();
-        }, delay);
-      });
-
-      // Foco contínuo via interval (para janelas teimosas)
-      let focoCount = 0;
-      const focoInterval = setInterval(() => {
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.focus();
-          mainWindow.webContents.focus();
-          focoCount++;
-          if (focoCount >= 5) clearInterval(focoInterval);
-        }
-      }, 400);
     })
     .catch((error) => {
       dialog.showErrorBox(
@@ -336,13 +305,6 @@ function createWindow(serverPort) {
     });
 }
 
-app.on('activate', () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.focus();
-    mainWindow.webContents.focus();
-    mainWindow.moveTop();
-  }
-});
 
 app.whenReady().then(() => {
   try {

@@ -136,6 +136,28 @@
         </div>
       </div>
 
+      <div id="pdvClienteBox" style="display:none;">
+        <div class="linha-resumo">
+          <span>Cliente *</span>
+          <input type="text" id="clienteBuscaPrazo" class="form-control form-control-sm" placeholder="Buscar cliente..." autocomplete="off">
+          <input type="hidden" id="clientePrazoId">
+        </div>
+        <div id="clientePrazoSugestoes" class="list-group" style="position:absolute; z-index:9999; max-height:150px; overflow-y:auto; width:calc(100% - 24px);"></div>
+        <div id="clientePrazoSelecionado" style="display:none;" class="linha-resumo">
+          <span>Selecionado:</span>
+          <strong id="clientePrazoNome" style="font-size:0.8rem;"></strong>
+          <button type="button" id="btnRemoverClientePrazo" style="margin-left:auto; padding:0 4px; font-size:0.7rem; background:#dc3545; color:#fff; border:none; border-radius:3px; cursor:pointer;">✕</button>
+        </div>
+        <div class="linha-resumo">
+          <span>Parcelas</span>
+          <input type="number" id="parcelasPrazo" value="1" min="1" max="24" step="1" style="width:60px;">
+        </div>
+        <div class="linha-resumo">
+          <span>1º Vencimento</span>
+          <input type="date" id="dataVencimentoPrazo" style="width:100%;">
+        </div>
+      </div>
+
       <button id="btnFinalizarVendaPdv" class="btn-finalizar">
         Finalizar Venda
       </button>

@@ -198,6 +198,64 @@ function bindEventosPDV() {
     $('#btnFechamentoCaixaPdv').off('click').on('click', abrirFechamentoCaixa);
     $('#formaPagamentoPdv').off('change').on('change', aoAlterarFormaPagamento);
     $('#formaPagamentoPdv').val('');
+
+    // Busca de cliente para venda a prazo (sidebar)
+    $('#clienteBuscaPrazo').off('input').on('input', function() {
+        const termo = normalizarTexto($(this).val()).trim();
+        if (termo.length < 2) {
+            $('#clientePrazoSugestoes').empty().hide();
+            $('#clientePrazoId').val('');
+            return;
+        }
+
+        $.ajax({
+            url: `${API_URL}/clientes`,
+            method: 'GET',
+            success: function(clientes) {
+                const filtrados = (clientes || []).filter(c =>
+                    normalizarTexto(c.nome).includes(termo) ||
+                    String(c.cpf_cnpj || '').replace(/\D/g, '').includes(termo.replace(/\D/g, ''))
+                );
+
+                if (filtrados.length === 0) {
+                    $('#clientePrazoSugestoes').html('<div class="list-group-item" style="font-size:0.8rem;">Nenhum cliente encontrado</div>').show();
+                    return;
+                }
+
+                $('#clientePrazoSugestoes').html(
+                    filtrados.map(c => `
+                        <button type="button" class="list-group-item list-group-item-action" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}" style="font-size:0.8rem; padding:4px 8px;">
+                            ${escapeHtml(c.nome || '')}${c.cpf_cnpj ? ' - ' + formatarCpfCnpj(c.cpf_cnpj) : ''}
+                        </button>
+                    `).join('')
+                ).show();
+            },
+            error: function() {
+                $('#clientePrazoSugestoes').empty().hide();
+            }
+        });
+    });
+
+    $(document).off('click.prazoSugestao').on('click.prazoSugestao', '#clientePrazoSugestoes button', function() {
+        const id = $(this).data('id');
+        const nome = $(this).data('nome');
+        $('#clientePrazoId').val(id);
+        $('#clienteBuscaPrazo').val(nome);
+        $('#clientePrazoSugestoes').empty().hide();
+        $('#clientePrazoSelecionado').show();
+        $('#clientePrazoNome').text(nome);
+        clienteSelecionado = { id: Number(id), nome: String(nome) };
+    });
+
+    $('#btnRemoverClientePrazo').off('click').on('click', function() {
+        $('#clientePrazoId').val('');
+        $('#clienteBuscaPrazo').val('');
+        $('#clientePrazoSelecionado').hide();
+        $('#clientePrazoNome').text('');
+        clienteSelecionado = null;
+        setTimeout(() => $('#clienteBuscaPrazo').trigger('focus'), 50);
+    });
+
     $('#clienteBusca').off('input').on('input', async function () {
         const termo = $(this).val().trim();
         if (termo.length < 2) {
@@ -301,18 +359,35 @@ function aoAlterarFormaPagamento() {
     if (formaPagamento === 'prazo') {
         boxCliente.show();
 
+        // Padrão: 30 dias a partir de hoje
         const hoje = new Date();
-        const primeiroVencimento = new Date(
-            hoje.getFullYear(),
-            hoje.getMonth() + 1,
-            hoje.getDate()
-        );
+        const vencimentoPadrao = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + 30);
 
-        $('#data-recebimento-prazo').val(primeiroVencimento.toISOString().split('T')[0]);
+        if (!$('#dataVencimentoPrazo').val()) {
+            $('#dataVencimentoPrazo').val(vencimentoPadrao.toISOString().split('T')[0]);
+        }
+
+        if (!$('#parcelasPrazo').val() || $('#parcelasPrazo').val() === '0') {
+            $('#parcelasPrazo').val(1);
+        }
+
+        setTimeout(() => {
+            $('#clienteBuscaPrazo').trigger('focus');
+        }, 100);
     } else {
-        removerClienteSelecionado();
-        $('#data-recebimento-prazo').val('');
+        limparCamposPrazo();
     }
+}
+
+function limparCamposPrazo() {
+    $('#clientePrazoId').val('');
+    $('#clienteBuscaPrazo').val('');
+    $('#clientePrazoSugestoes').empty().hide();
+    $('#clientePrazoSelecionado').hide();
+    $('#clientePrazoNome').text('');
+    $('#dataVencimentoPrazo').val('');
+    $('#parcelasPrazo').val(1);
+    clienteSelecionado = null;
 }
 
 function calcularTrocoPDV() {
@@ -611,7 +686,12 @@ function limparCarrinho() {
     carrinho = [];
     formaPagamentoSelecionada = null;
     vendaPrazoInfo = null;
+    clienteSelecionado = null;
     $('#descontoPdv').val(0);
+    $('#formaPagamentoPdv').val('');
+    $('#pdvClienteBox').hide();
+    $('#pdvDinheiroBox').hide();
+    limparCamposPrazo();
     atualizarCarrinho();
     focarCampoCodigo();
     showNotification('Carrinho limpo com sucesso.', 'info');
@@ -953,7 +1033,28 @@ function abrirModalDecisaoFiscal(skipPagamento = false) {
         }
     }
 
-    const clienteId = clienteSelecionado?.id || vendaPrazoInfo?.cliente_id || null;
+    if (formaPagamento === 'prazo') {
+        const clienteIdPrazo = clienteSelecionado?.id || Number($('#clientePrazoId').val()) || null;
+        if (!clienteIdPrazo) {
+            showNotification('Para venda a prazo, selecione um cliente.', 'warning');
+            $('#clienteBuscaPrazo').trigger('focus');
+            return;
+        }
+        const parcelas = Number($('#parcelasPrazo').val()) || 1;
+        if (parcelas < 1) {
+            showNotification('A quantidade de parcelas deve ser no mínimo 1.', 'warning');
+            $('#parcelasPrazo').trigger('focus');
+            return;
+        }
+        const dataVenc = $('#dataVencimentoPrazo').val();
+        if (!dataVenc) {
+            showNotification('Informe a data do primeiro vencimento.', 'warning');
+            $('#dataVencimentoPrazo').trigger('focus');
+            return;
+        }
+    }
+
+    const clienteId = clienteSelecionado?.id || vendaPrazoInfo?.cliente_id || Number($('#clientePrazoId').val()) || null;
 
     $('#modal-container').html(`
         <div class="modal fade" id="decisaoFiscalModal" tabindex="-1" aria-hidden="true">
@@ -1092,13 +1193,29 @@ function executarFinalizacaoVenda(emitirFiscal = false) {
         return;
     }
 
-    const clienteId = clienteSelecionado?.id || vendaPrazoInfo?.cliente_id || null;
+    const clienteId = clienteSelecionado?.id || vendaPrazoInfo?.cliente_id || Number($('#clientePrazoId').val()) || null;
     if (formaPagamento === 'prazo' && !clienteId) {
         showNotification('Para venda a prazo, selecione um cliente.', 'warning');
+        $('#clienteBuscaPrazo').trigger('focus');
         return;
     }
 
-    const desconto = parseFloat($('#desconto').val()) || 0;
+    if (formaPagamento === 'prazo') {
+        const parcelas = Number($('#parcelasPrazo').val()) || vendaPrazoInfo?.parcelas || 1;
+        const dataVenc = $('#dataVencimentoPrazo').val() || vendaPrazoInfo?.primeiro_vencimento;
+        if (!dataVenc) {
+            showNotification('Informe a data do primeiro vencimento.', 'warning');
+            $('#dataVencimentoPrazo').trigger('focus');
+            return;
+        }
+        if (parcelas < 1) {
+            showNotification('A quantidade de parcelas deve ser no mínimo 1.', 'warning');
+            $('#parcelasPrazo').trigger('focus');
+            return;
+        }
+    }
+
+    const desconto = parseFloat($('#descontoPdv').val()) || 0;
     const subtotal = calcularSubtotal();
     const total = Math.round((Math.max(0, subtotal - desconto)) * 100) / 100;
 
@@ -1127,12 +1244,9 @@ function executarFinalizacaoVenda(emitirFiscal = false) {
     }
 
     if (formaPagamento === 'prazo') {
-        const dataRecebimento = vendaPrazoInfo?.primeiro_vencimento || $('#data-recebimento-prazo').val();
-        if (!dataRecebimento) {
-            showNotification('Informe a data de recebimento da venda a prazo.', 'warning');
-            return;
-        }
-        dados.parcelas = vendaPrazoInfo?.parcelas || 1;
+        const dataRecebimento = $('#dataVencimentoPrazo').val() || vendaPrazoInfo?.primeiro_vencimento;
+        const qtdParcelas = Number($('#parcelasPrazo').val()) || vendaPrazoInfo?.parcelas || 1;
+        dados.parcelas = qtdParcelas;
         dados.primeiro_vencimento = dataRecebimento;
     }
 
@@ -1478,6 +1592,12 @@ async function imprimirDANFEFiscal(vendaId) {
             return;
         }
 
+        // No Electron, usar janela nativa para comprovante ficar na frente
+        if (window.electronAPI?.abrirComprovante) {
+            window.electronAPI.abrirComprovante(texto);
+            return;
+        }
+
         const janela = window.open('', '_blank', 'width=420,height=720');
 
         if (!janela) {
@@ -1593,6 +1713,12 @@ function imprimirCupomNaoFiscal(vendaId, venda, total, desconto) {
         },
         error: function(xhr) {
             console.warn('Falha ao imprimir via ESC/POS, usando fallback do navegador.', xhr);
+            // No Electron, usar janela nativa para comprovante ficar na frente
+            if (window.electronAPI?.abrirComprovante) {
+                window.electronAPI.abrirComprovante(cupomHtml);
+                return;
+            }
+
             const printWindow = window.open('', '_blank', 'width=420,height=720');
             if (!printWindow) {
                 showNotification('Permita pop-ups para imprimir o comprovante.', 'warning');
