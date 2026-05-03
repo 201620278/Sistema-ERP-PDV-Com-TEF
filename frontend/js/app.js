@@ -47,8 +47,8 @@ function renderSidebarBrandPadrao() {
     if (!brand) return;
 
     brand.innerHTML = `
-        <h5 class="text-white">ESQUINÃO</h5>
-        <small class="text-muted">DA ECONOMIA</small>
+        <h5 class="text-white">CDS</h5>
+        <small class="text-muted">Sistemas</small>
     `;
 }
 

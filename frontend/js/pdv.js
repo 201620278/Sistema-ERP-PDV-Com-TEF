@@ -81,11 +81,40 @@ function atualizarDataHora() {
 }
 
 function bindEventosPDV() {
-    $(document).off('keydown.pdvF1').on('keydown.pdvF1', function(e) {
+    $(document).off('keydown.pdvAtalhos').on('keydown.pdvAtalhos', function(e) {
         if (e.key === 'F1') {
             e.preventDefault();
             e.stopPropagation();
             abrirConsultaProdutosPDV();
+        }
+        if (e.key === 'F4') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (carrinho.length > 0) {
+                const ultimoIndex = carrinho.length - 1;
+                const input = $(`.quantidade-item[data-index="${ultimoIndex}"]`);
+                if (input.length) {
+                    input.trigger('focus');
+                    input[0].select();
+                }
+            } else {
+                showNotification('Nenhum item para alterar quantidade.', 'warning');
+            }
+        }
+        if (e.key === 'F8') {
+            e.preventDefault();
+            e.stopPropagation();
+            $('#descontoPdv').trigger('focus');
+        }
+        if (e.key === 'F10') {
+            e.preventDefault();
+            e.stopPropagation();
+            abrirModalDecisaoFiscal();
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelarVendaAtual();
         }
     });
 
@@ -1429,7 +1458,7 @@ function imprimirCupomNaoFiscal(vendaId, venda, total, desconto) {
         </head>
         <body>
             <div class="header">
-                <div class="empresa">ESQUINAO DA ECONOMIA</div>
+                <div class="empresa">CDS Sistemas</div>
                 <div>${dataHora}</div>
                 <div>COMPROVANTE NÃO FISCAL</div>
                 <div>Venda #${vendaId}</div>
