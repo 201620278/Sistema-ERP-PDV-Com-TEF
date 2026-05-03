@@ -171,6 +171,38 @@ router.get('/:id', (req, res) => {
   });
 });
 
+// Buscar detalhes completos da venda para emissão de NFC-e
+router.get('/:id/detalhes', (req, res) => {
+  const vendaId = req.params.id;
+
+  db.get(`
+    SELECT v.*, c.nome as cliente_nome
+    FROM vendas v
+    LEFT JOIN clientes c ON c.id = v.cliente_id
+    WHERE v.id = ?
+  `, [vendaId], (err, venda) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    if (!venda) {
+      return res.status(404).json({ error: 'Venda não encontrada' });
+    }
+
+    db.all(`
+      SELECT vi.*, p.nome as produto_nome
+      FROM vendas_itens vi
+      JOIN produtos p ON p.id = vi.produto_id
+      WHERE vi.venda_id = ?
+    `, [vendaId], (errItens, itens) => {
+      if (errItens) return res.status(500).json({ error: errItens.message });
+
+      res.json({
+        venda,
+        itens
+      });
+    });
+  });
+});
+
 // Criar nova venda
 
 // NOVA LÓGICA: Suporte a venda a prazo

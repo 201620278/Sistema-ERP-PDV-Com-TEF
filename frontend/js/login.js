@@ -62,16 +62,44 @@ $(document).ready(function() {
   // Remover classes que podem bloquear interação
   document.body.classList.remove('pdv-mode', 'menu-open');
 
-  // Forçar foco no campo de usuário após carregar
-  setTimeout(() => {
+  // Limpar qualquer elemento com pointer-events que bloqueie
+  $('*').css('pointer-events', '');
+  $('body, html').css('pointer-events', 'auto');
+
+  // Função para focar agressivamente no campo de usuário
+  function focarAgressivamente() {
     const campoUsername = $('#username');
     if (campoUsername.length > 0) {
-      campoUsername.focus().select();
+      campoUsername[0].focus({ preventScroll: true });
+      campoUsername[0].select();
     }
+  }
 
-    // Forçar reflow no Electron para garantir cliques
+  // Sequência de foco múltipla
+  [0, 100, 300, 500, 800, 1200].forEach(delay => {
+    setTimeout(focarAgressivamente, delay);
+  });
+
+  // Foco contínuo periódico (para garantir contra perda de foco)
+  let focoCount = 0;
+  const focoInterval = setInterval(() => {
+    focarAgressivamente();
+    focoCount++;
+    if (focoCount >= 10) clearInterval(focoInterval); // Parar após 5 segundos
+  }, 500);
+
+  // Forçar reflow no Electron para garantir cliques
+  setTimeout(() => {
     if (window.electronAPI && window.electronAPI.forcarReflow) {
       window.electronAPI.forcarReflow();
     }
-  }, 300);
+  }, 100);
+
+  // Detectar se o campo perdeu foco indevidamente e refocar
+  $('#username').on('blur', function() {
+    // Só refocar se não estiver no campo de senha (transição intencional)
+    if (!$('#password').is(':focus')) {
+      setTimeout(() => focarAgressivamente(), 50);
+    }
+  });
 });

@@ -64,7 +64,7 @@ function salvarNota(payload) {
         venda_id, numero, serie, chave_acesso, ambiente, status,
         xml_enviado, xml_retorno, protocolo, recibo, qr_code_url, danfe_html,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
     `, [
       payload.venda_id,
       payload.numero,
@@ -289,6 +289,10 @@ async function emitirPorVendaId(vendaId) {
       if (protMatch) {
         soapResponse.protocolo = protMatch[1];
       }
+    } else if (raw.includes('<cStat>539</cStat>')) {
+      status = 'rejeitada_duplicidade';
+
+      console.warn('NFC-e rejeitada por duplicidade. O próximo número fiscal será corrigido automaticamente.');
     } else if (raw.includes('<cStat>') || /rejeic/i.test(raw)) {
       status = 'rejeitada';
     } else {

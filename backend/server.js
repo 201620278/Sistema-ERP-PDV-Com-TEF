@@ -72,6 +72,17 @@ function verificarToken(req, res, next) {
 const { router: authRouter } = require('./rotas/auth');
 app.use('/api/auth', authRouter);
 
+// Rota pública para configuração de fundo do login
+const db = require('./database');
+app.get('/api/configuracoes/login_background', (req, res) => {
+    db.get("SELECT valor FROM configuracoes WHERE chave = 'login_background'", [], (err, row) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        res.json({ valor: row ? row.valor : null });
+    });
+});
+
 // Rota de login (página pública)
 app.get('/login', (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/login.html'));

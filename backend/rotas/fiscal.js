@@ -245,7 +245,7 @@ justificativa: ${justificativa.trim()}
           UPDATE nfce_notas
           SET status = ?,
               xml_retorno = COALESCE(xml_retorno, '') || char(10) || ? || char(10) || ?,
-              updated_at = CURRENT_TIMESTAMP
+              updated_at = datetime('now', 'localtime')
           WHERE id = ?
         `, [novoStatus, resumoCancelamento, retornoTexto, id], (updErr) => {
           if (updErr) {

@@ -258,22 +258,30 @@ function createWindow(serverPort) {
     .then(() => {
       mainWindow.maximize();
       mainWindow.show();
+
+      // HACK EXTREMO: Foco agressivo usando alwaysOnTop temporário
+      mainWindow.setAlwaysOnTop(true);
+      setTimeout(() => mainWindow.setAlwaysOnTop(false), 200);
+
       // Garantir foco após mostrar - sequência robusta
-      setTimeout(() => {
-        mainWindow.focus();
-        mainWindow.webContents.focus();
-      }, 100);
-      // Segunda tentativa de foco após DOM carregar
-      setTimeout(() => {
-        mainWindow.focus();
-        mainWindow.webContents.focus();
-        mainWindow.flashFrame(false);
-      }, 500);
-      // Terceira tentativa final
-      setTimeout(() => {
-        mainWindow.focus();
-        mainWindow.webContents.focus();
-      }, 1000);
+      [50, 100, 200, 300, 500, 800, 1000, 1500, 2000].forEach(delay => {
+        setTimeout(() => {
+          mainWindow.focus();
+          mainWindow.webContents.focus();
+          if (delay === 200) mainWindow.moveTop();
+        }, delay);
+      });
+
+      // Foco contínuo via interval (para janelas teimosas)
+      let focoCount = 0;
+      const focoInterval = setInterval(() => {
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.focus();
+          mainWindow.webContents.focus();
+          focoCount++;
+          if (focoCount >= 5) clearInterval(focoInterval);
+        }
+      }, 400);
     })
     .catch((error) => {
       dialog.showErrorBox(

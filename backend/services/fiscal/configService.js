@@ -151,12 +151,44 @@ function setConfiguracao(chave, valor, tipo = 'string', descricao = '') {
 }
 
 async function incrementaNumeroFiscal() {
-  const atual = await getConfiguracoes(['fiscal_numero_atual']);
-  const numeroAtual = Number(atual.fiscal_numero_atual || 1);
-  const proximo = numeroAtual + 1;
+  const cfg = await getConfiguracoes([
+    'fiscal_numero_atual',
+    'fiscal_serie',
+    'fiscal_ambiente'
+  ]);
 
-  await setConfiguracao('fiscal_numero_atual', String(proximo), 'number', 'Próximo número da NFC-e');
-  return numeroAtual;
+  const numeroConfig = Number(cfg.fiscal_numero_atual || 1);
+  const serie = Number(cfg.fiscal_serie || 1);
+  const ambiente = Number(cfg.fiscal_ambiente || 2);
+
+  return new Promise((resolve, reject) => {
+    db.get(`
+      SELECT MAX(CAST(numero AS INTEGER)) AS maior_numero
+      FROM nfce_notas
+      WHERE CAST(serie AS INTEGER) = ?
+        AND CAST(ambiente AS INTEGER) = ?
+    `, [serie, ambiente], async (err, row) => {
+      if (err) return reject(err);
+
+      const maiorBanco = Number(row?.maior_numero || 0);
+
+      // Usa sempre o maior entre configuração e banco
+      const numeroSeguro = Math.max(numeroConfig, maiorBanco + 1);
+
+      try {
+        await setConfiguracao(
+          'fiscal_numero_atual',
+          String(numeroSeguro + 1),
+          'number',
+          'Próximo número da NFC-e'
+        );
+
+        resolve(numeroSeguro);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
 }
 
 module.exports = {

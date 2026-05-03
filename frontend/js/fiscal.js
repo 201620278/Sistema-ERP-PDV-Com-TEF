@@ -1,6 +1,21 @@
 let fiscalNotasCache = [];
 let verTodasNotasFiscais = false;
 
+// Função para formatar data/hora no fuso do Brasil
+function formatarDataHoraBrasil(data) {
+    if (!data) return '-';
+
+    return new Date(data).toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
 function loadFiscal() {
     renderFiscal();
     carregarFiscalConfig();
@@ -85,19 +100,25 @@ function renderFiscal() {
 
                     <div class="tab-pane fade" id="fiscal-emissao-tab">
                         <div class="row g-3">
-                            <div class="col-md-6">
+                            <div class="col-md-8">
                                 <label class="form-label">ID da venda</label>
-                                <input type="number" min="1" id="fiscalVendaIdManual" class="form-control" placeholder="Ex.: 15">
+                                <input type="number" min="1" id="fiscalVendaIdManual" class="form-control" placeholder="Digite o ID da venda">
                             </div>
-                            <div class="col-md-6 d-flex align-items-end">
-                                <button class="btn btn-warning w-100" onclick="emitirFiscalManual()">
-                                    <i class="fas fa-file-invoice"></i> Emitir NFC-e da venda
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button class="btn btn-primary w-100" onclick="buscarVendaParaNFCe()">
+                                    <i class="fas fa-search"></i> Buscar Venda
                                 </button>
                             </div>
                         </div>
 
+                        <div id="dados-venda-nfce" class="mt-3"></div>
+
+                        <button id="btnEmitirNFCe" class="btn btn-warning mt-3 d-none w-100" onclick="emitirNFCeDaVenda()">
+                            <i class="fas fa-file-invoice"></i> Emitir NFC-e
+                        </button>
+
                         <div class="alert alert-info mt-3 mb-0">
-                            Use esta aba para emitir manualmente uma NFC-e de uma venda já gravada no sistema.
+                            <i class="fas fa-info-circle"></i> Busque a venda pelo ID, confira os dados e clique em "Emitir NFC-e".
                         </div>
                     </div>
                 </div>
@@ -370,7 +391,7 @@ function renderTabelaFiscalNotas() {
                             <td><span class="badge ${getBadgeFiscalClass(n.status)}">${n.status || 'pendente'}</span></td>
                             <td style="max-width:220px; word-break:break-all;">${n.chave_acesso || '-'}</td>
                             <td>${n.protocolo || '-'}</td>
-                            <td>${formatDateTime(n.created_at)}</td>
+                            <td>${formatarDataHoraBrasil(n.created_at)}</td>
                             <td>
                                 <button class="btn btn-sm btn-info" onclick="verDetalheFiscal(${n.id})" title="Visualizar">
                                     <i class="fas fa-eye"></i>
@@ -470,6 +491,115 @@ function emitirFiscalManual() {
 
             showNotification(resp?.message || 'Processo fiscal executado.');
             carregarFiscalNotas();
+        },
+        error: function(xhr) {
+            showNotification(xhr.responseJSON?.error || 'Erro ao emitir NFC-e.', 'danger');
+        }
+    });
+}
+
+// Variável para armazenar dados da venda buscada
+let vendaNFCeCache = null;
+
+function buscarVendaParaNFCe() {
+    const vendaId = Number($('#fiscalVendaIdManual').val());
+
+    if (!vendaId) {
+        showNotification('Informe o ID da venda.', 'warning');
+        return;
+    }
+
+    $.ajax({
+        url: `${API_URL}/vendas/${vendaId}/detalhes`,
+        method: 'GET',
+        success: function(data) {
+            vendaNFCeCache = data;
+
+            let html = `
+                <div class="card shadow-sm">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="fas fa-shopping-cart"></i> Venda #${data.venda.id}</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <p class="mb-1"><strong>Cliente:</strong> ${data.venda.cliente_nome || 'Consumidor Final'}</p>
+                                <p class="mb-1"><strong>Data:</strong> ${formatarDataHoraBrasil(data.venda.data_venda)}</p>
+                            </div>
+                            <div class="col-md-6 text-md-end">
+                                <p class="mb-1"><strong>Total:</strong> <span class="h5 text-success">${dinheiro(data.venda.total)}</span></p>
+                                <p class="mb-1"><strong>Forma:</strong> ${data.venda.forma_pagamento}</p>
+                            </div>
+                        </div>
+
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Produto</th>
+                                    <th class="text-center">Qtd</th>
+                                    <th class="text-end">Preço Unit.</th>
+                                    <th class="text-end">Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            `;
+
+            data.itens.forEach(item => {
+                html += `
+                    <tr>
+                        <td>${item.produto_nome}</td>
+                        <td class="text-center">${item.quantidade}</td>
+                        <td class="text-end">${dinheiro(item.preco_unitario || item.preco)}</td>
+                        <td class="text-end">${dinheiro(item.subtotal)}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+
+            $('#dados-venda-nfce').html(html);
+            $('#btnEmitirNFCe').removeClass('d-none');
+
+            showNotification('Venda encontrada! Confira os dados antes de emitir.', 'success');
+        },
+        error: function(xhr) {
+            vendaNFCeCache = null;
+            $('#dados-venda-nfce').html('');
+            $('#btnEmitirNFCe').addClass('d-none');
+            showNotification(xhr.responseJSON?.error || 'Erro ao buscar venda.', 'danger');
+        }
+    });
+}
+
+function emitirNFCeDaVenda() {
+    if (!vendaNFCeCache) {
+        showNotification('Busque uma venda primeiro.', 'warning');
+        return;
+    }
+
+    const vendaId = vendaNFCeCache.venda.id;
+
+    $.ajax({
+        url: `${API_URL}/fiscal/emitir/venda/${vendaId}`,
+        method: 'POST',
+        success: function(resp) {
+            if (resp?.danfeHtml) {
+                imprimirHtmlFiscal(resp.danfeHtml);
+            }
+
+            showNotification(resp?.message || 'NFC-e emitida com sucesso!', 'success');
+            carregarFiscalNotas();
+
+            // Limpar cache e dados
+            vendaNFCeCache = null;
+            $('#dados-venda-nfce').html('');
+            $('#btnEmitirNFCe').addClass('d-none');
+            $('#fiscalVendaIdManual').val('');
         },
         error: function(xhr) {
             showNotification(xhr.responseJSON?.error || 'Erro ao emitir NFC-e.', 'danger');

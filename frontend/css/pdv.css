@@ -91,16 +91,21 @@
   grid-template-columns: 260px 1fr 300px;
   gap: 12px;
   max-width: 100%;
+  align-items: start;
 }
 
 .pdv-card {
   background: white;
   border-radius: 14px;
-  padding: 14px;
+  padding: 12px;
   box-shadow: 0 4px 18px rgba(0,0,0,.08);
   border: 1px solid #e5e7eb;
   box-sizing: border-box;
   min-width: 0;
+}
+
+.pdv-resumo.pdv-card {
+  padding: 12px;
 }
 
 /* Cards laterais fixos (sticky) */
@@ -109,8 +114,16 @@
   position: sticky;
   top: 12px;
   align-self: start;
-  max-height: calc(100vh - 140px);
-  overflow-y: auto;
+  max-height: calc(100vh - 120px);
+  min-height: auto;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+}
+
+.pdv-resumo {
+  max-height: none;
+  height: fit-content;
 }
 
 /* Scrollbar estilizada para os cards */
@@ -131,8 +144,8 @@
 }
 
 .pdv-card h2 {
-  margin: 0 0 14px;
-  font-size: 18px;
+  margin: 0 0 10px;
+  font-size: 16px;
 }
 
 .pdv-card-header {
@@ -145,11 +158,12 @@
 .pdv-resumo input,
 .pdv-resumo select {
   width: 100%;
-  padding: 12px;
+  padding: 8px 12px;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
-  font-size: 15px;
-  margin-bottom: 10px;
+  font-size: 14px;
+  margin-bottom: 0;
+  height: 40px;
 }
 
 .pdv-busca button,
@@ -158,7 +172,7 @@
 .btn-secundario {
   border: none;
   border-radius: 10px;
-  padding: 12px;
+  padding: 10px 12px;
   cursor: pointer;
   font-weight: bold;
 }
@@ -230,8 +244,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 14px;
-  gap: 10px;
+  margin-bottom: 8px;
+  gap: 8px;
+  min-height: 32px;
 }
 
 .linha-resumo input {
@@ -240,11 +255,11 @@
 }
 
 .total-pdv {
-  background: #111827;
+  background: #0f172a;
   color: white;
-  border-radius: 14px;
-  padding: 18px;
-  margin: 18px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin: 8px 0;
 }
 
 .total-pdv span {
@@ -255,29 +270,44 @@
 
 .total-pdv strong {
   display: block;
-  font-size: 36px;
-  margin-top: 6px;
+  font-size: 32px;
+  margin-top: 4px;
+}
+
+.pdv-resumo > * {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
+.pdv-resumo > *:last-child {
+  margin-bottom: 0;
 }
 
 .pdv-resumo label {
   font-weight: bold;
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+  margin-top: 4px;
+  flex-shrink: 0;
+  font-size: 14px;
 }
 
 .btn-finalizar {
   width: 100%;
   background: #16a34a;
   color: white;
-  font-size: 17px;
-  margin-top: 12px;
+  font-size: 16px;
+  margin-top: 8px;
+  padding: 10px;
 }
 
 .btn-cancelar {
   width: 100%;
   background: #dc2626;
   color: white;
-  margin-top: 10px;
+  margin-top: 6px;
+  padding: 8px;
+  font-size: 14px;
 }
 
 .btn-secundario {
@@ -316,8 +346,13 @@
 /* Troco destacado */
 #trocoPDV {
   color: #16a34a;
-  font-size: 32px;
+  font-size: 28px;
   font-weight: bold;
+}
+
+/* Garantir que o card de resumo não estoure */
+.pdv-resumo {
+  box-sizing: border-box;
 }
 
 /* PDV Fullscreen Mode */

@@ -99,7 +99,8 @@ function renderConfiguracoes(configuracoes, usuarios) {
         'complemento',
         'bairro',
         'cidade',
-        'uf'
+        'uf',
+        'login_background'
     ];
 
     configuracoes.sort((a, b) => {
@@ -423,6 +424,27 @@ function renderConfigField(config) {
         `;
     }
 
+    if (config.chave === 'login_background') {
+        const previewUrl = value && value.startsWith('/')
+            ? `${API_URL.replace('/api', '')}${value}`
+            : value;
+
+        const previewImg = previewUrl
+            ? `<img src="${escapeHtml(previewUrl)}" alt="Fundo login atual" style="max-height: 150px; max-width: 100%;" />`
+            : '<span class="text-muted">Nenhuma imagem definida (usa gradiente padrão)</span>';
+
+        return `
+            <div>
+                <input type="file" class="form-control" id="loginBackgroundUpload" accept="image/*">
+                <small class="text-muted">Recomendado: imagem 1920x1080px ou maior</small>
+                <input type="hidden" id="login_background_path" value="${escapeHtml(value)}">
+                <div id="loginBackgroundPreview" class="mt-2">
+                    ${previewImg}
+                </div>
+            </div>
+        `;
+    }
+
     if (config.chave === 'cep') {
         return `<input type="text" class="form-control" id="${config.chave}" value="${value}" onblur="buscarCep(this.value)" oninput="formatCep(this)">`;
     }
@@ -487,12 +509,44 @@ async function uploadLogoFile() {
     return data.path;
 }
 
+async function uploadLoginBackgroundFile() {
+    const bgInput = document.getElementById('loginBackgroundUpload');
+    if (!bgInput || !bgInput.files || bgInput.files.length === 0) {
+        return null;
+    }
+
+    const formData = new FormData();
+    formData.append('imagem', bgInput.files[0]);
+
+    const resp = await fetch(`${API_URL}/configuracoes/upload-login-background`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: formData
+    });
+
+    if (!resp.ok) {
+        const errorData = await resp.json().catch(() => null);
+        throw new Error(errorData?.error || 'Erro ao enviar imagem de fundo.');
+    }
+
+    const data = await resp.json();
+    if (data.path) {
+        $('#login_background_path').val(data.path);
+        $('#loginBackgroundPreview').html(`<img src="${escapeHtml(data.path)}" alt="Fundo login atual" style="max-height: 150px; max-width: 100%;" />`);
+    }
+
+    return data.path;
+}
+
 // Save configuracoes
 async function saveConfiguracoes() {
     try {
         await uploadLogoFile();
+        await uploadLoginBackgroundFile();
     } catch (error) {
-        showNotification(error.message || 'Erro ao enviar a logo.', 'danger');
+        showNotification(error.message || 'Erro ao enviar imagem.', 'danger');
         return;
     }
 
@@ -501,10 +555,17 @@ async function saveConfiguracoes() {
     $('#configForm .form-control').each(function() {
         const chave = $(this).attr('id');
         const valor = $(this).val();
-        if (!chave || chave === 'logoUpload') return;
+        if (!chave || chave === 'logoUpload' || chave === 'loginBackgroundUpload') return;
         if (chave === 'logo_path') {
             configs.push({
                 chave: 'logo',
+                valor: valor
+            });
+            return;
+        }
+        if (chave === 'login_background_path') {
+            configs.push({
+                chave: 'login_background',
                 valor: valor
             });
             return;

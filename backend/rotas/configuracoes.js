@@ -20,8 +20,10 @@ function getWritableStoragePath() {
 
 const appDataPath = getWritableStoragePath();
 const logoStoragePath = path.join(appDataPath, 'storage', 'logos');
+const loginBgStoragePath = path.join(appDataPath, 'storage', 'login-backgrounds');
 
 fs.mkdirSync(logoStoragePath, { recursive: true });
+fs.mkdirSync(loginBgStoragePath, { recursive: true });
 
 const logoUpload = multer({
   storage: multer.diskStorage({
@@ -41,6 +43,24 @@ const logoUpload = multer({
   }
 });
 
+const loginBgUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, loginBgStoragePath),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.jpg';
+      cb(null, `login_bg_${Date.now()}${ext}`);
+    }
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      return cb(new Error('Tipo de arquivo inválido. Use PNG, JPG, JPEG, GIF ou WEBP.'));
+    }
+    cb(null, true);
+  }
+});
+
 const saveLogoConfig = (req, res) => {
   if (!req.file) {
     console.error('[LOGO] Arquivo não enviado');
@@ -51,7 +71,7 @@ const saveLogoConfig = (req, res) => {
 
   const logoPath = `/storage/logos/${req.file.filename}`;
   db.run(
-    `UPDATE configuracoes SET valor = ?, updated_at = CURRENT_TIMESTAMP WHERE chave = 'logo'`,
+    `UPDATE configuracoes SET valor = ?, updated_at = datetime('now', 'localtime') WHERE chave = 'logo'`,
     [logoPath],
     function(err) {
       if (err) {
@@ -81,6 +101,46 @@ const saveLogoConfig = (req, res) => {
   );
 };
 
+const saveLoginBackgroundConfig = (req, res) => {
+  if (!req.file) {
+    console.error('[LOGIN_BG] Arquivo não enviado');
+    return res.status(400).json({ error: 'Arquivo de imagem não enviado.' });
+  }
+
+  console.log('[LOGIN_BG] Arquivo recebido:', req.file.filename, 'Tamanho:', req.file.size);
+
+  const bgPath = `/storage/login-backgrounds/${req.file.filename}`;
+  db.run(
+    `UPDATE configuracoes SET valor = ?, updated_at = datetime('now', 'localtime') WHERE chave = 'login_background'`,
+    [bgPath],
+    function(err) {
+      if (err) {
+        console.error('[LOGIN_BG] Erro ao atualizar DB:', err);
+        return res.status(500).json({ error: 'Erro ao salvar imagem: ' + err.message });
+      }
+
+      if (this.changes === 0) {
+        db.run(
+          `INSERT INTO configuracoes (chave, valor, tipo, descricao) VALUES ('login_background', ?, 'text', 'Imagem de fundo da tela de login')`,
+          [bgPath],
+          function(insertErr) {
+            if (insertErr) {
+              console.error('[LOGIN_BG] Erro ao inserir DB:', insertErr);
+              return res.status(500).json({ error: 'Erro ao salvar imagem: ' + insertErr.message });
+            }
+            console.log('[LOGIN_BG] Imagem salva com sucesso:', bgPath);
+            res.json({ success: true, path: bgPath });
+          }
+        );
+        return;
+      }
+
+      console.log('[LOGIN_BG] Imagem atualizada com sucesso:', bgPath);
+      res.json({ success: true, path: bgPath });
+    }
+  );
+};
+
 // Middleware para tratamento de erros do multer
 const handleMulterError = (err, req, res, next) => {
   if (err) {
@@ -101,6 +161,7 @@ const handleMulterError = (err, req, res, next) => {
 
 router.post('/logo', logoUpload.single('logo'), handleMulterError, saveLogoConfig);
 router.post('/upload-logo', logoUpload.single('logo'), handleMulterError, saveLogoConfig);
+router.post('/upload-login-background', loginBgUpload.single('imagem'), handleMulterError, saveLoginBackgroundConfig);
 
 router.get('/backup', (req, res) => {
   const config = backup.loadConfigSync();
@@ -152,7 +213,7 @@ router.put('/:chave', (req, res) => {
 
   db.run(`
     UPDATE configuracoes
-    SET valor = ?, updated_at = CURRENT_TIMESTAMP
+    SET valor = ?, updated_at = datetime('now', 'localtime')
     WHERE chave = ?
   `, [valor, chave], function(err) {
     if (err) {
