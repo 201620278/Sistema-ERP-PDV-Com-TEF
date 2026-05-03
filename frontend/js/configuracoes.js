@@ -137,6 +137,9 @@ function renderConfiguracoes(configuracoes, usuarios) {
                                     <td>${u.created_at ? formatDateTime(u.created_at) : '-'}</td>
                                     <td>
                                         ${u.username !== JSON.parse(localStorage.getItem('user') || '{}').username ? `
+                                            <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick='showModalNovoUsuario(${JSON.stringify(u)})'>
+                                                <i class="fas fa-edit"></i>
+                                            </button>
                                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="excluirUsuarioSistema(${u.id}, '${escapeHtml(u.username).replace(/'/g, "\\'")}')">
                                                 <i class="fas fa-trash"></i>
                                             </button>
@@ -222,71 +225,163 @@ function escapeHtml(s) {
     return div.innerHTML;
 }
 
-function showModalNovoUsuario() {
+function showModalNovoUsuario(usuario = null) {
+    const permissoesDisponiveis = [
+        ['pdv', 'PDV'],
+        ['vendas', 'Vendas'],
+        ['produtos', 'Produtos'],
+        ['clientes', 'Clientes'],
+        ['compras', 'Compras'],
+        ['fornecedores', 'Fornecedores'],
+        ['financeiro', 'Financeiro'],
+        ['caixa', 'Caixa'],
+        ['fiscal', 'Fiscal'],
+        ['configuracoes', 'Configurações'],
+        ['usuarios', 'Usuários'],
+        ['relatorios', 'Relatórios'],
+        ['categorias', 'Categorias']
+    ];
+
+    const editando = !!usuario;
+    const permissoesUsuario = usuario?.permissoes || [];
+
     const modalHtml = `
         <div class="modal fade" id="novoUsuarioModal" tabindex="-1">
-            <div class="modal-dialog">
+            <div class="modal-dialog modal-lg">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Novo usuário</h5>
+                        <h5 class="modal-title">${editando ? 'Editar usuário' : 'Novo usuário'}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
+
                     <div class="modal-body">
+                        <input type="hidden" id="usuario_id_edicao" value="${editando ? usuario.id : ''}">
+
                         <div class="mb-3">
                             <label class="form-label">Nome de usuário</label>
-                            <input type="text" class="form-control" id="novo_usuario_login" autocomplete="off">
+                            <input 
+                                type="text" 
+                                class="form-control" 
+                                id="novo_usuario_login" 
+                                value="${editando ? escapeHtml(usuario.username) : ''}"
+                                ${editando ? 'disabled' : ''}
+                            >
                         </div>
+
                         <div class="mb-3">
-                            <label class="form-label">Senha (mín. 4 caracteres)</label>
+                            <label class="form-label">
+                                Senha ${editando ? '<small class="text-muted">(deixe vazio para não alterar)</small>' : ''}
+                            </label>
                             <input type="password" class="form-control" id="novo_usuario_senha" autocomplete="new-password">
                         </div>
+
                         <div class="mb-3">
                             <label class="form-label">Perfil</label>
-                            <select class="form-control" id="novo_usuario_role">
-                                <option value="operador">Operador</option>
-                                <option value="admin">Administrador</option>
+                            <select class="form-control" id="novo_usuario_role" onchange="togglePermissoesUsuario()">
+                                <option value="operador" ${usuario?.role === 'operador' ? 'selected' : ''}>Operador</option>
+                                <option value="admin" ${usuario?.role === 'admin' ? 'selected' : ''}>Administrador</option>
                             </select>
                         </div>
+
+                        <div id="boxPermissoesUsuario">
+                            <label class="form-label fw-bold">Permissões do operador</label>
+
+                            <div class="row">
+                                ${permissoesDisponiveis.map(([valor, label]) => `
+                                    <div class="col-md-4 mb-2">
+                                        <label class="form-check">
+                                            <input 
+                                                type="checkbox" 
+                                                class="form-check-input permissao-usuario" 
+                                                value="${valor}"
+                                                ${permissoesUsuario.includes(valor) ? 'checked' : ''}
+                                            >
+                                            <span class="form-check-label">${label}</span>
+                                        </label>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
                         <div id="novo-usuario-erro" class="alert alert-danger py-2 d-none"></div>
                     </div>
+
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="button" class="btn btn-primary" onclick="salvarNovoUsuario()">Cadastrar</button>
+                        <button type="button" class="btn btn-primary" onclick="salvarNovoUsuario()">
+                            ${editando ? 'Salvar alterações' : 'Cadastrar'}
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
     `;
+
+    // Limpar modais travados antes de criar novo
+    if (typeof limparModaisTravados === 'function') {
+        limparModaisTravados();
+    }
+
     $('#modal-container').html(modalHtml);
     $('#novoUsuarioModal').modal('show');
+    togglePermissoesUsuario();
 }
 
 function salvarNovoUsuario() {
+    const id = $('#usuario_id_edicao').val();
     const username = $('#novo_usuario_login').val().trim();
     const password = $('#novo_usuario_senha').val();
     const role = $('#novo_usuario_role').val();
+
+    const permissoes = $('.permissao-usuario:checked')
+        .map(function () {
+            return $(this).val();
+        })
+        .get();
+
     const $err = $('#novo-usuario-erro');
     $err.addClass('d-none').text('');
 
-    if (!username || !password) {
+    if (!id && (!username || !password)) {
         $err.removeClass('d-none').text('Preencha usuário e senha.');
         return;
     }
 
+    const payload = {
+        username,
+        password,
+        role,
+        permissoes
+    };
+
     $.ajax({
-        url: `${API_URL}/auth/usuarios`,
-        method: 'POST',
+        url: id ? `${API_URL}/auth/usuarios/${id}` : `${API_URL}/auth/usuarios`,
+        method: id ? 'PUT' : 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({ username, password, role }),
-        success: function() {
+        data: JSON.stringify(payload),
+        success: function () {
             $('#novoUsuarioModal').modal('hide');
-            showNotification('Usuário cadastrado com sucesso!');
+            showNotification(id ? 'Usuário atualizado com sucesso!' : 'Usuário cadastrado com sucesso!');
             loadConfiguracoes();
         },
-        error: function(xhr) {
-            $err.removeClass('d-none').text(xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Erro ao cadastrar.');
+        error: function (xhr) {
+            $err.removeClass('d-none').text(
+                xhr.responseJSON && xhr.responseJSON.error
+                    ? xhr.responseJSON.error
+                    : 'Erro ao salvar usuário.'
+            );
         }
     });
+}
+
+function togglePermissoesUsuario() {
+    const role = $('#novo_usuario_role').val();
+
+    if (role === 'admin') {
+        $('#boxPermissoesUsuario').hide();
+    } else {
+        $('#boxPermissoesUsuario').show();
+    }
 }
 
 function excluirUsuarioSistema(id) {

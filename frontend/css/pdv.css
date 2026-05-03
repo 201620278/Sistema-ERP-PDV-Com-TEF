@@ -403,6 +403,13 @@ body.pdv-mode.menu-open::before {
   bottom: 0;
   background: rgba(0,0,0,0.5);
   z-index: 9999;
+  pointer-events: auto; /* Só bloqueia quando menu está aberto no PDV */
+}
+
+/* Garantir que overlay não fique preso fora do PDV */
+body:not(.pdv-mode)::before {
+  display: none !important;
+  pointer-events: none !important;
 }
 
 /* Calculadora PDV */

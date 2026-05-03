@@ -40,9 +40,9 @@ function calcularResumoCaixa(caixa, callback) {
     SELECT forma_pagamento, SUM(total) AS total
     FROM vendas
     WHERE status = 'concluida'
-      AND DATE(data_venda) = DATE(?)
+      AND caixa_id = ?
     GROUP BY forma_pagamento
-  `, [data], (err, vendas) => {
+  `, [caixa.id], (err, vendas) => {
     if (err) return callback(err);
 
     db.get(`
@@ -182,6 +182,34 @@ router.get('/aberto', (req, res) => {
     calcularResumoCaixa(caixa, (calcErr, resumo) => {
       if (calcErr) return res.status(500).json({ error: calcErr.message });
       res.json(resumo);
+    });
+  });
+});
+
+router.get('/saldo-inicial-sugerido', (req, res) => {
+  db.get(`
+    SELECT
+      id,
+      valor_fechamento,
+      fechado_em
+    FROM caixa
+    WHERE status = 'fechado'
+    ORDER BY id DESC
+    LIMIT 1
+  `, [], (err, caixa) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+
+    const valor = Number(caixa?.valor_fechamento || 0);
+
+    res.json({
+      valor_sugerido: valor,
+      ultimo_caixa_id: caixa?.id || null,
+      fechado_em: caixa?.fechado_em || null,
+      mensagem: caixa
+        ? 'Saldo sugerido carregado do último fechamento.'
+        : 'Nenhum fechamento anterior encontrado.'
     });
   });
 });
@@ -363,7 +391,6 @@ router.post('/suprimento', (req, res) => {
 });
 
 router.post('/fechar', (req, res) => {
-  const valorFechamento = n(req.body.valor_fechamento);
   const observacao = req.body.observacao || '';
 
   db.get(`
@@ -379,15 +406,19 @@ router.post('/fechar', (req, res) => {
     calcularResumoCaixa(caixa, (calcErr, resumo) => {
       if (calcErr) return res.status(500).json({ error: calcErr.message });
 
-      const dinheiroEsperado = resumo.dinheiro.dinheiro_esperado;
-      const diferenca = valorFechamento - dinheiroEsperado;
+      // Cálculo correto do dinheiro esperado (saldo que deve ter no caixa)
+      const valorInicial = Number(caixa.valor_inicial || 0);
+      const vendasDinheiro = Number(resumo.dinheiro.vendas_dinheiro || 0);
+      const suprimentos = Number(resumo.dinheiro.suprimentos || 0);
+      const sangrias = Number(resumo.dinheiro.sangrias || 0);
+
+      const dinheiroEsperado = valorInicial + vendasDinheiro + suprimentos - sangrias;
 
       db.run(`
         UPDATE caixa SET
           total_sangrias = ?,
           saldo_esperado = ?,
           valor_fechamento = ?,
-          diferenca = ?,
           observacao = ?,
           status = 'fechado',
           fechado_em = DATETIME('now', 'localtime')
@@ -395,8 +426,7 @@ router.post('/fechar', (req, res) => {
       `, [
         resumo.dinheiro.sangrias,
         dinheiroEsperado,
-        valorFechamento,
-        diferenca,
+        dinheiroEsperado,  // Salvar dinheiro esperado para próxima abertura
         observacao,
         caixa.id
       ], (updateErr) => {
@@ -406,8 +436,7 @@ router.post('/fechar', (req, res) => {
           message: 'Caixa fechado com sucesso.',
           resumo: {
             ...resumo,
-            valor_fechamento: valorFechamento,
-            diferenca
+            valor_fechamento: dinheiroEsperado
           }
         });
       });

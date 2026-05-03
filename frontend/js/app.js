@@ -11,6 +11,178 @@ const API_URL = (() => {
 let currentPage = 'pdv';
 let chart = null;
 
+// ============================================
+// FUNÇÃO GLOBAL DE LIMPEZA DE MODAIS TRAVADOS
+// ============================================
+function limparModaisTravados() {
+    // remove backdrop
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+
+    // remove classe que trava scroll/clique
+    document.body.classList.remove('modal-open');
+
+    // remove estilos que travam
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+
+    // remove aria-hidden presos
+    document.querySelectorAll('[aria-hidden="true"]').forEach(el => {
+        el.removeAttribute('aria-hidden');
+    });
+
+    // remove loading e overlay que possam estar bloqueando
+    document.querySelectorAll('.loading, .overlay, .toast-container, .spinner-overlay').forEach(el => {
+        el.style.display = 'none';
+        el.style.pointerEvents = 'none';
+    });
+
+    // Forçar reflow do body para garantir que cliques funcionem
+    document.body.style.display = 'none';
+    document.body.offsetHeight; // trigger reflow
+    document.body.style.display = '';
+}
+
+// Executar sempre após fechar modal
+$(document).on('hidden.bs.modal', function () {
+    limparModaisTravados();
+});
+
+// Forçar limpeza automática (anti-travamento)
+setInterval(() => {
+    const backdrop = document.querySelector('.modal-backdrop');
+
+    if (backdrop && !document.querySelector('.modal.show')) {
+        limparModaisTravados();
+    }
+}, 2000);
+
+// ============================================
+// FUNÇÃO DE DIAGNÓSTICO - Elemento Bloqueador
+// ============================================
+function diagnosticarClique(x, y) {
+    const elemento = document.elementFromPoint(x, y);
+    console.log('🔍 Elemento no clique:', elemento);
+    console.log('🔍 Tag:', elemento?.tagName);
+    console.log('🔍 Classes:', elemento?.className);
+    console.log('🔍 ID:', elemento?.id);
+    console.log('🔍 z-index:', window.getComputedStyle(elemento).zIndex);
+    console.log('🔍 pointer-events:', window.getComputedStyle(elemento).pointerEvents);
+    console.log('🔍 display:', window.getComputedStyle(elemento).display);
+    console.log('🔍 visibility:', window.getComputedStyle(elemento).visibility);
+    return elemento;
+}
+
+// Ativar diagnóstico de clique com Ctrl+Click
+$(document).on('click', function(e) {
+    if (e.ctrlKey) {
+        diagnosticarClique(e.clientX, e.clientY);
+    }
+});
+
+// ============================================
+// DETECTOR DE TRAVAMENTO PARA ELECTRON
+// ============================================
+let ultimoClique = Date.now();
+let cliquesDetectados = 0;
+
+$(document).on('click', function(e) {
+    ultimoClique = Date.now();
+    cliquesDetectados++;
+});
+
+// Verificar a cada 3 segundos se houve tentativas de clique que falharam
+setInterval(() => {
+    // Se estamos no Electron e houve tentativa de interação
+    if (window.electronAPI && cliquesDetectados > 0) {
+        const tempoDesdeUltimoClique = Date.now() - ultimoClique;
+
+        // Se o último clique foi entre 100ms e 2s atrás, pode ter falhado
+        if (tempoDesdeUltimoClique > 100 && tempoDesdeUltimoClique < 2000) {
+            console.log('🚨 Possível travamento detectado no Electron');
+
+            // Chamar Electron para forçar reflow
+            if (window.electronAPI.forcarReflow) {
+                window.electronAPI.forcarReflow();
+                console.log('✅ Reflow solicitado ao Electron');
+            }
+        }
+
+        // Resetar contador
+        cliquesDetectados = 0;
+    }
+}, 3000);
+
+// ============================================
+// DIAGNÓSTICO AUTOMÁTICO DE ELEMENTOS BLOQUEADORES
+// ============================================
+function diagnosticarElementosBloqueadores() {
+    const suspeitos = [
+        '.modal-backdrop',
+        '.modal-backdrop-senha',
+        '.swal2-container',
+        '.toast-container',
+        '.spinner-overlay',
+        '.loading',
+        '.overlay',
+        '.modal-open::before',
+        'body.pdv-mode.menu-open::before'
+    ];
+
+    let encontrados = [];
+
+    suspeitos.forEach(seletor => {
+        const elementos = document.querySelectorAll(seletor);
+        if (elementos.length > 0) {
+            elementos.forEach((el, i) => {
+                const rect = el.getBoundingClientRect();
+                const style = window.getComputedStyle(el);
+                encontrados.push({
+                    seletor: seletor,
+                    index: i,
+                    tag: el.tagName,
+                    id: el.id,
+                    classes: el.className,
+                    zIndex: style.zIndex,
+                    display: style.display,
+                    visibility: style.visibility,
+                    pointerEvents: style.pointerEvents,
+                    width: rect.width,
+                    height: rect.height,
+                    top: rect.top,
+                    left: rect.left
+                });
+            });
+        }
+    });
+
+    // Verificar elemento no centro da tela
+    const centroX = window.innerWidth / 2;
+    const centroY = window.innerHeight / 2;
+    const elementoCentro = document.elementFromPoint(centroX, centroY);
+
+    return {
+        suspeitos: encontrados,
+        elementoNoCentro: elementoCentro ? {
+            tag: elementoCentro.tagName,
+            id: elementoCentro.id,
+            classes: elementoCentro.className,
+            zIndex: window.getComputedStyle(elementoCentro).zIndex
+        } : null,
+        bodyClasses: document.body.className,
+        timestamp: new Date().toISOString()
+    };
+}
+
+// Logar diagnóstico a cada 10 segundos (apenas no Electron)
+if (window.electronAPI) {
+    setInterval(() => {
+        const diag = diagnosticarElementosBloqueadores();
+        if (diag.suspeitos.length > 0) {
+            console.log('🔍 Elementos suspeitos detectados:', diag);
+        }
+    }, 10000);
+}
+
 function handleUnauthorized() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -27,6 +199,7 @@ $(document).ready(function() {
     if (!localStorage.getItem('token')) return;
 
     carregarLogoSidebar();
+    filtrarMenuPorPermissoes();
 
     $('.nav-link').on('click', function(e) {
         e.preventDefault();
@@ -41,6 +214,57 @@ $(document).ready(function() {
     $('.nav-link[data-page="pdv"]').addClass('active');
     loadPage(currentPage);
 });
+
+// Mapeamento de páginas para permissões
+const PERMISSOES_PAGINAS = {
+    'pdv': 'pdv',
+    'caixa': 'caixa',
+    'produtos': 'produtos',
+    'clientes': 'clientes',
+    'compras': 'compras',
+    'fornecedores': 'fornecedores',
+    'vendas': 'vendas',
+    'financeiro': 'financeiro',
+    'categorias': 'categorias',
+    'fiscal': 'fiscal',
+    'configuracoes': 'configuracoes',
+    'usuarios': 'usuarios',
+    'relatorios': 'relatorios'
+};
+
+function obterPermissoesUsuario() {
+    try {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        return {
+            role: user.role || 'operador',
+            permissoes: user.permissoes || []
+        };
+    } catch (e) {
+        return { role: 'operador', permissoes: [] };
+    }
+}
+
+function usuarioTemPermissao(page) {
+    const { role, permissoes } = obterPermissoesUsuario();
+
+    // Admin tem acesso a tudo
+    if (role === 'admin') return true;
+
+    // Verifica se tem permissão específica para a página
+    const permissaoNecessaria = PERMISSOES_PAGINAS[page];
+    if (!permissaoNecessaria) return true; // Página sem restrição
+
+    return permissoes.includes(permissaoNecessaria);
+}
+
+function filtrarMenuPorPermissoes() {
+    $('.nav-link').each(function() {
+        const page = $(this).data('page');
+        if (!usuarioTemPermissao(page)) {
+            $(this).parent().hide(); // Esconde o <li> pai
+        }
+    });
+}
 
 function renderSidebarBrandPadrao() {
     const brand = document.getElementById('sidebar-brand');
@@ -104,6 +328,9 @@ function isScriptAlreadyLoaded(src) {
 }
 
 function carregarPaginaHtml(url, callback) {
+    // Limpar modais travados antes de trocar o conteúdo
+    limparModaisTravados();
+
     $.get(url, function(html) {
         const $page = $('#page-content');
         const nodes = $.parseHTML(html, document, true);
@@ -148,6 +375,15 @@ function carregarPaginaHtml(url, callback) {
 
 function loadPage(page) {
     currentPage = page;
+
+    // Verificar permissão antes de carregar a página
+    if (!usuarioTemPermissao(page)) {
+        showNotification('Você não tem permissão para acessar esta página.', 'warning');
+        if (page !== 'pdv') {
+            loadPage('pdv'); // Redireciona para PDV
+        }
+        return;
+    }
 
     // Controle de fullscreen para PDV
     if (typeof ativarPdvFullscreen === 'function' && typeof desativarPdvFullscreen === 'function') {
@@ -305,6 +541,7 @@ function showNotification(mensagem, tipo = 'success') {
     const alert = document.createElement('div');
     alert.id = id;
     alert.className = `alert alert-${tipo} alert-dismissible fade show`;
+    alert.style.pointerEvents = 'auto'; // Permitir interação com a notificação
     alert.innerHTML = `
         ${mensagem}
         <button type="button" class="btn-close" onclick="fecharNotificacao('${id}')"></button>

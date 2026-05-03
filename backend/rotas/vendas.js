@@ -38,6 +38,8 @@ function bloquearVendaSemCaixaAberto(req, res, next) {
       });
     }
 
+    // Armazenar caixa_id para uso nas vendas
+    req.caixaId = caixa.id;
     next();
   });
 }
@@ -292,9 +294,9 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
       db.serialize(() => {
         db.run('BEGIN TRANSACTION');
         db.run(`
-          INSERT INTO vendas (codigo, data_venda, cliente_id, total, desconto, forma_pagamento, status)
-          VALUES (?, ?, ?, ?, ?, ?, 'concluida')
-        `, [codigo, data_venda, cliente_id, totalNum, desconto || 0, forma_pagamento], function(err) {
+          INSERT INTO vendas (codigo, data_venda, cliente_id, total, desconto, forma_pagamento, status, caixa_id)
+          VALUES (?, ?, ?, ?, ?, ?, 'concluida', ?)
+        `, [codigo, data_venda, cliente_id, totalNum, desconto || 0, forma_pagamento, req.caixaId], function(err) {
           if (err) {
             db.run('ROLLBACK');
             res.status(500).json({ error: err.message });
@@ -402,9 +404,9 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
     db.serialize(() => {
       db.run('BEGIN TRANSACTION');
       db.run(`
-        INSERT INTO vendas (codigo, data_venda, cliente_id, total, desconto, forma_pagamento, status, valor_recebido)
-        VALUES (?, ?, ?, ?, ?, ?, 'concluida', ?)
-      `, [codigo, data_venda, cliente_id || null, totalNum, desconto || 0, forma_pagamento, valor_recebido || null], function(err) {
+        INSERT INTO vendas (codigo, data_venda, cliente_id, total, desconto, forma_pagamento, status, valor_recebido, caixa_id)
+        VALUES (?, ?, ?, ?, ?, ?, 'concluida', ?, ?)
+      `, [codigo, data_venda, cliente_id || null, totalNum, desconto || 0, forma_pagamento, valor_recebido || null, req.caixaId], function(err) {
         if (err) {
           db.run('ROLLBACK');
           res.status(500).json({ error: err.message });

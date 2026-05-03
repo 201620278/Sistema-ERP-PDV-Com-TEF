@@ -4,6 +4,12 @@ const fs = require('fs');
 const http = require('http');
 const net = require('net');
 
+// 🔥 CORREÇÃO DEFINITIVA GPU - Resolve travamentos no Windows
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('disable-software-rasterizer');
+app.commandLine.appendSwitch('disable-features', 'UseSkiaRenderer');
+
 let mainWindow;
 
 function obterPortaServidor() {
@@ -214,6 +220,35 @@ function createWindow(serverPort) {
   mainWindow.on('restore', () => {
     mainWindow.focus();
     mainWindow.webContents.focus();
+    // Forçar reflow no frontend
+    mainWindow.webContents.executeJavaScript(`
+      document.body.style.display = 'none';
+      document.body.offsetHeight;
+      document.body.style.display = '';
+    `);
+  });
+
+  // Forçar foco quando janela ganha foco
+  mainWindow.on('focus', () => {
+    mainWindow.webContents.focus();
+  });
+
+  // Detectar quando perde foco
+  mainWindow.on('blur', () => {
+    console.log('Janela perdeu foco');
+  });
+
+  // IPC para forçar reflow quando solicitado pelo frontend
+  const { ipcMain } = require('electron');
+  ipcMain.on('forcar-reflow', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.executeJavaScript(`
+        document.body.style.display = 'none';
+        document.body.offsetHeight;
+        document.body.style.display = '';
+        console.log('Reflow forçado pelo Electron');
+      `);
+    }
   });
 
   esperarServidor(`${baseUrl}/ping`)
@@ -223,11 +258,22 @@ function createWindow(serverPort) {
     .then(() => {
       mainWindow.maximize();
       mainWindow.show();
-      // Garantir foco após mostrar
+      // Garantir foco após mostrar - sequência robusta
       setTimeout(() => {
         mainWindow.focus();
         mainWindow.webContents.focus();
       }, 100);
+      // Segunda tentativa de foco após DOM carregar
+      setTimeout(() => {
+        mainWindow.focus();
+        mainWindow.webContents.focus();
+        mainWindow.flashFrame(false);
+      }, 500);
+      // Terceira tentativa final
+      setTimeout(() => {
+        mainWindow.focus();
+        mainWindow.webContents.focus();
+      }, 1000);
     })
     .catch((error) => {
       dialog.showErrorBox(

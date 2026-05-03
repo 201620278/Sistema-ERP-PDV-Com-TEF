@@ -50,3 +50,28 @@ $('#loginForm').on('submit', function(e) {
     }
   });
 });
+
+// ============================================
+// FOCO AUTOMÁTICO E LIMPEZA DE MODAIS NO LOGIN
+// ============================================
+$(document).ready(function() {
+  // Limpar qualquer modal/overlay remanescente
+  $('.modal-backdrop').remove();
+  $('body').removeClass('modal-open').css('overflow', '').css('padding-right', '');
+
+  // Remover classes que podem bloquear interação
+  document.body.classList.remove('pdv-mode', 'menu-open');
+
+  // Forçar foco no campo de usuário após carregar
+  setTimeout(() => {
+    const campoUsername = $('#username');
+    if (campoUsername.length > 0) {
+      campoUsername.focus().select();
+    }
+
+    // Forçar reflow no Electron para garantir cliques
+    if (window.electronAPI && window.electronAPI.forcarReflow) {
+      window.electronAPI.forcarReflow();
+    }
+  }, 300);
+});

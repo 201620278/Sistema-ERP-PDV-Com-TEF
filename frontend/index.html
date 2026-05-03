@@ -83,6 +83,8 @@
                     <div class="sidebar-footer">
                         <div class="text-white mb-2 small">
                             <i class="fas fa-user"></i> <span id="user-nome">Carregando...</span>
+                            <br>
+                            <small id="user-perfil" class="text-muted">-</small>
                         </div>
                         <button class="btn btn-danger btn-sm w-100" onclick="logout()">
                             <i class="fas fa-sign-out-alt"></i> Sair
@@ -154,8 +156,9 @@
                 return;
             }
             
-            // Mostrar nome do usuário
-            $('#user-nome').text(user.nome || 'Usuário');
+            // Mostrar nome e perfil do usuário
+            $('#user-nome').text(user.nome || user.username || 'Usuário');
+            $('#user-perfil').text(user.role === 'admin' ? 'Administrador' : 'Operador');
             
             // Configurar AJAX para enviar token em todas as requisições
             $.ajaxSetup({
@@ -189,7 +192,7 @@
     </script>
 
     <div id="notification-container"
-         style="position: fixed; top: 20px; right: 20px; z-index: 9999;">
+         style="position: fixed; top: 20px; right: 20px; z-index: 9999; pointer-events: none;">
     </div>
 
     <footer style="position: fixed; bottom: 0; width: 100%; background: #111827; color: #9ca3af; text-align: center; padding: 6px; font-size: 12px; z-index: 1000;">

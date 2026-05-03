@@ -639,3 +639,28 @@ main {
 .btn-fiscal-bloqueado:hover {
     opacity: 0.65;
 }
+
+/* 🔥 CORREÇÃO DEFINITIVA ELECTRON CLIQUE */
+* {
+  -webkit-app-region: no-drag !important;
+}
+
+/* Só permitir drag onde você quiser (opcional) */
+.drag-area {
+  -webkit-app-region: drag;
+}
+
+/* Garantir que inputs sempre funcionem */
+input,
+textarea,
+select,
+button,
+a,
+.nav-link,
+.btn,
+.form-control,
+.card,
+.modal,
+.modal * {
+  -webkit-app-region: no-drag !important;
+}

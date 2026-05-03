@@ -65,26 +65,34 @@ function renderStatusCaixa(resumo) {
 }
 
 function renderAbrirCaixa() {
-  // Limpar qualquer modal remanescente e backdrop
   $('.modal-backdrop').remove();
   $('body').removeClass('modal-open').css('padding-right', '');
-  
+
   $('#caixa-area').html(`
     <div class="card">
       <div class="card-header">
         <strong>Abrir Caixa</strong>
       </div>
+
       <div class="card-body">
+        <div id="saldo-sugerido-info" class="alert alert-info py-2">
+          Buscando último saldo de caixa...
+        </div>
+
         <label>Valor inicial em dinheiro</label>
 
-        <input 
+        <input
           type="text"
           inputmode="decimal"
           id="valor-inicial-caixa"
-          class="form-control mb-3"
+          class="form-control mb-2"
           placeholder="Ex: 50,00"
           autocomplete="off"
         >
+
+        <small class="text-muted d-block mb-3">
+          O sistema sugere o último valor contado no fechamento anterior, mas você pode editar se necessário.
+        </small>
 
         <button type="button" class="btn btn-success" onclick="abrirCaixa()">
           Abrir Caixa
@@ -93,17 +101,40 @@ function renderAbrirCaixa() {
     </div>
   `);
 
-  // Timeout maior para garantir que o DOM esteja pronto
-  setTimeout(() => {
-    const campo = $('#valor-inicial-caixa');
-    if (campo.length > 0) {
-      campo.focus();
-      // Garantir que o campo está realmente focado
-      campo.on('focus', function() {
-        $(this).select();
-      });
-    }
-  }, 200);
+  carregarSaldoInicialSugerido();
+}
+
+function carregarSaldoInicialSugerido() {
+  $.get(`${API_URL}/caixa/saldo-inicial-sugerido`, function(res) {
+    const valor = Number(res.valor_sugerido || 0);
+
+    $('#valor-inicial-caixa').val(
+      valor.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })
+    );
+
+    $('#saldo-sugerido-info').html(`
+      <strong>Último saldo contado:</strong> ${dinheiro(valor)}
+      <br>
+      <small>${res.mensagem || 'Valor sugerido carregado.'}</small>
+    `);
+
+    setTimeout(() => {
+      $('#valor-inicial-caixa').focus().select();
+    }, 200);
+  }).fail(function() {
+    $('#saldo-sugerido-info').removeClass('alert-info').addClass('alert-warning').html(`
+      Não foi possível buscar o último saldo. Informe o valor manualmente.
+    `);
+
+    $('#valor-inicial-caixa').val('0,00');
+
+    setTimeout(() => {
+      $('#valor-inicial-caixa').focus().select();
+    }, 200);
+  });
 }
 
 function pegarValorCampo(id) {
@@ -118,7 +149,12 @@ function renderCaixaAberto(resumo) {
   // Limpar qualquer modal remanescente e backdrop
   $('.modal-backdrop').remove();
   $('body').removeClass('modal-open').css('padding-right', '');
-  
+
+  // Limpar modais travados via função global se disponível
+  if (typeof limparModaisTravados === 'function') {
+    limparModaisTravados();
+  }
+
   const d = resumo.dinheiro;
   const digital = resumo.digital;
 
@@ -237,6 +273,18 @@ function renderCaixaAberto(resumo) {
       </div>
     </div>
   `);
+
+  // Forçar foco no campo de fechamento após renderizar
+  setTimeout(() => {
+    const campoFechamento = $('#valor-fechamento');
+    if (campoFechamento.length > 0) {
+      campoFechamento.focus().select();
+    }
+    // Forçar reflow para garantir cliques no Electron
+    if (window.electronAPI && window.electronAPI.forcarReflow) {
+      window.electronAPI.forcarReflow();
+    }
+  }, 300);
 }
 
 function abrirCaixa() {
