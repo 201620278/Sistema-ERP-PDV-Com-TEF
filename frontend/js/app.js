@@ -148,6 +148,16 @@ function carregarPaginaHtml(url, callback) {
 
 function loadPage(page) {
     currentPage = page;
+
+    // Controle de fullscreen para PDV
+    if (typeof ativarPdvFullscreen === 'function' && typeof desativarPdvFullscreen === 'function') {
+        if (page === 'pdv') {
+            ativarPdvFullscreen();
+        } else {
+            desativarPdvFullscreen();
+        }
+    }
+
     switch (page) {
             case 'pdv':
             return carregarPaginaHtml('pdv.html', function() {

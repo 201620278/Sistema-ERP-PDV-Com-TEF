@@ -1853,6 +1853,61 @@ document.addEventListener("keydown", (e) => {
 
   if (e.key === "Escape") {
     e.preventDefault();
-    document.getElementById("btnCancelarVendaPdv")?.click();
+    // Se menu estiver aberto, fecha o menu
+    if (document.body.classList.contains('menu-open')) {
+      fecharMenuPdv();
+    } else {
+      document.getElementById("btnCancelarVendaPdv")?.click();
+    }
+  }
+});
+
+// PDV Fullscreen Mode
+function ativarPdvFullscreen() {
+  document.body.classList.add('pdv-mode');
+}
+
+function desativarPdvFullscreen() {
+  document.body.classList.remove('pdv-mode');
+}
+
+function abrirMenuPdv() {
+  document.body.classList.add('menu-open');
+}
+
+function fecharMenuPdv() {
+  document.body.classList.remove('menu-open');
+}
+
+// Event listener para botão de menu
+$(document).off('click.menuPdv').on('click.menuPdv', '#btnMenuPdv', function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  abrirMenuPdv();
+});
+
+// Fechar menu ao clicar no overlay ou em um item do menu
+$(document).off('click.fecharMenu').on('click.fecharMenu', function(e) {
+  if (document.body.classList.contains('menu-open')) {
+    // Se clicou no overlay (fora do menu) ou em um link do menu
+    const clickedSidebar = $(e.target).closest('#sidebar').length > 0;
+    const clickedMenuButton = $(e.target).closest('#btnMenuPdv').length > 0;
+
+    if (!clickedSidebar && !clickedMenuButton) {
+      fecharMenuPdv();
+    }
+
+    // Se clicou em um link do menu, fecha o menu e desativa fullscreen
+    if ($(e.target).closest('.nav-link').length > 0) {
+      fecharMenuPdv();
+      desativarPdvFullscreen();
+    }
+  }
+});
+
+// Ativar fullscreen quando carregar PDV
+$(document).ready(function() {
+  if (currentPage === 'pdv') {
+    ativarPdvFullscreen();
   }
 });
