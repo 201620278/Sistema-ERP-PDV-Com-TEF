@@ -541,7 +541,7 @@ function abrirDetalhesPagar(id) {
     window.__financeiroPagarState.modalDetalhesPagamento.show();
   }
 
-  fetch(`/api/financeiro/${id}`, {
+  fetch(`/api/financeiro/contas-pagar/${id}/detalhes`, {
     headers: {
       'Authorization': 'Bearer ' + localStorage.getItem('token')
     }
@@ -564,25 +564,154 @@ function abrirDetalhesPagar(id) {
         </div>
       ` : '';
 
+      const compra = dados.compra || null;
+      const itensCompra = dados.itens_compra || [];
+
+      const parcelado = Number(dados.total_parcelas || 1) > 1 ? 'Sim' : 'Não';
+
+      const blocoCompra = compra ? `
+        <hr>
+
+        <h6 class="mb-3">
+          <i class="fas fa-file-invoice"></i> Dados da Compra / Nota Fiscal
+        </h6>
+
+        <div class="row g-3">
+          <div class="col-12 col-md-4">
+            <strong>Nº NF:</strong> ${escapeHtmlFinanceiro(compra.numero_nf || compra.nota_fiscal || '-')}
+          </div>
+
+          <div class="col-12 col-md-4">
+            <strong>Série:</strong> ${escapeHtmlFinanceiro(compra.serie_nf || '-')}
+          </div>
+
+          <div class="col-12 col-md-4">
+            <strong>Modelo:</strong> ${escapeHtmlFinanceiro(compra.modelo_nf || '-')}
+          </div>
+
+          <div class="col-12 col-md-4">
+            <strong>Data da Compra:</strong> ${formatarDataPagar(compra.data_compra)}
+          </div>
+
+          <div class="col-12 col-md-4">
+            <strong>Data Emissão NF:</strong> ${compra.data_emissao ? formatarDataPagar(compra.data_emissao) : '-'}
+          </div>
+
+          <div class="col-12 col-md-4">
+            <strong>Data Entrada:</strong> ${compra.data_entrada ? formatarDataPagar(compra.data_entrada) : '-'}
+          </div>
+
+          <div class="col-12">
+            <strong>Chave de Acesso:</strong>
+            <div style="word-break: break-all;">
+              ${escapeHtmlFinanceiro(compra.chave_acesso || '-')}
+            </div>
+          </div>
+
+          <div class="col-12 col-md-4">
+            <strong>Total da NF:</strong> ${formatarMoedaPagar(compra.valor_total_nota || compra.total || 0)}
+          </div>
+
+          <div class="col-12 col-md-4">
+            <strong>Forma Pagamento:</strong> ${escapeHtmlFinanceiro(compra.forma_pagamento || dados.forma_pagamento || '-')}
+          </div>
+
+          <div class="col-12 col-md-4">
+            <strong>Condição:</strong> ${escapeHtmlFinanceiro(compra.condicao_pagamento || '-')}
+          </div>
+        </div>
+
+        <div class="mt-3 d-flex gap-2 flex-wrap">
+          <button class="btn btn-outline-primary" onclick="viewCompra(${compra.id})">
+            <i class="fas fa-eye"></i> Ver compra completa
+          </button>
+        </div>
+
+        <h6 class="mt-4 mb-2">Itens da Compra</h6>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>Produto</th>
+                <th>Qtd</th>
+                <th>Custo Unit.</th>
+                <th>Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                itensCompra.length
+                  ? itensCompra.map(item => `
+                    <tr>
+                      <td>${escapeHtmlFinanceiro(item.produto_nome || item.descricao_produto || '-')}</td>
+                      <td>${Number(item.quantidade || 0)}</td>
+                      <td>${formatarMoedaPagar(item.preco_unitario || 0)}</td>
+                      <td>${formatarMoedaPagar(item.subtotal || 0)}</td>
+                    </tr>
+                  `).join('')
+                  : `<tr><td colspan="4" class="text-center text-muted">Nenhum item encontrado.</td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+      ` : '';
+
       body.innerHTML = `
         <div class="row g-3">
-          <div class="col-12 col-md-6"><strong>Fornecedor:</strong> ${escapeHtmlFinanceiro(dados.pessoa_nome || '-')}</div>
-          <div class="col-12 col-md-6"><strong>Documento:</strong> ${escapeHtmlFinanceiro(dados.documento || '-')}</div>
-          <div class="col-12 col-md-6"><strong>Valor:</strong> ${formatarMoedaPagar(dados.valor)}</div>
-          <div class="col-12 col-md-6"><strong>Data Movimento:</strong> ${formatarDataPagar(dados.data_movimento)}</div>
-          <div class="col-12 col-md-6"><strong>Vencimento:</strong> ${dados.vencimento ? formatarDataPagar(dados.vencimento) : '-'}</div>
-          <div class="col-12 col-md-6"><strong>Status:</strong> ${formatarStatusBadgeSeguro(dados.status)}</div>
-          <div class="col-12 col-md-6"><strong>Origem:</strong> ${escapeHtmlFinanceiro(dados.origem || 'manual')}</div>
-          <div class="col-12 col-md-6"><strong>Parcela:</strong> ${dados.numero_parcela || '-'} / ${dados.total_parcelas || '-'}</div>
+          <div class="col-12 col-md-6">
+            <strong>Fornecedor:</strong> ${escapeHtmlFinanceiro(dados.pessoa_nome || '-')}
+          </div>
+
+          <div class="col-12 col-md-6">
+            <strong>Documento:</strong> ${escapeHtmlFinanceiro(dados.documento || compra?.numero_nf || '-')}
+          </div>
+
+          <div class="col-12 col-md-6">
+            <strong>Valor:</strong> ${formatarMoedaPagar(dados.valor)}
+          </div>
+
+          <div class="col-12 col-md-6">
+            <strong>Data Movimento:</strong> ${formatarDataPagar(dados.data_movimento)}
+          </div>
+
+          <div class="col-12 col-md-6">
+            <strong>Vencimento:</strong> ${dados.vencimento ? formatarDataPagar(dados.vencimento) : '-'}
+          </div>
+
+          <div class="col-12 col-md-6">
+            <strong>Data Pagamento:</strong> ${dados.baixado_em ? formatarDataPagar(dados.baixado_em) : '-'}
+          </div>
+
+          <div class="col-12 col-md-6">
+            <strong>Status:</strong> ${formatarStatusBadgeSeguro(dados.status)}
+          </div>
+
+          <div class="col-12 col-md-6">
+            <strong>Origem:</strong> ${escapeHtmlFinanceiro(dados.origem || 'manual')}
+          </div>
+
+          <div class="col-12 col-md-6">
+            <strong>Parcelado:</strong> ${parcelado}
+          </div>
+
+          <div class="col-12 col-md-6">
+            <strong>Parcela:</strong> ${dados.numero_parcela || 1} / ${dados.total_parcelas || 1}
+          </div>
+
           <div class="col-12">
             <strong>Descrição:</strong>
             <p class="mb-1">${escapeHtmlFinanceiro(dados.descricao || '-')}</p>
           </div>
+
           <div class="col-12">
             <strong>Observação:</strong>
             <p class="mb-0">${escapeHtmlFinanceiro(dados.observacao || '-')}</p>
           </div>
         </div>
+
+        ${blocoCompra}
+
         ${adminAcoes}
       `;
     })

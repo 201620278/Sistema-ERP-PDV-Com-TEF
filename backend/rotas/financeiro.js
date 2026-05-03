@@ -1895,6 +1895,49 @@ router.get('/relatorios/inadimplencia', (req, res) => {
   });
 });
 
+// Nova rota para detalhes de conta a pagar com dados da compra
+router.get('/contas-pagar/:id/detalhes', (req, res) => {
+  const { id } = req.params;
+
+  db.get(`SELECT * FROM financeiro WHERE id = ? AND tipo = 'despesa'`, [id], (err, conta) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!conta) return res.status(404).json({ error: 'Conta a pagar não encontrada.' });
+
+    const compraId = conta.compra_id || conta.referencia_id;
+
+    if (!compraId || conta.origem !== 'compra') {
+      return res.json({
+        ...conta,
+        compra: null,
+        itens_compra: []
+      });
+    }
+
+    db.get(`SELECT * FROM compras WHERE id = ?`, [compraId], (compraErr, compra) => {
+      if (compraErr) return res.status(500).json({ error: compraErr.message });
+
+      db.all(`
+        SELECT
+          ci.*,
+          COALESCE(p.nome, ci.descricao_produto) AS produto_nome,
+          p.codigo AS produto_codigo
+        FROM compras_itens ci
+        LEFT JOIN produtos p ON p.id = ci.produto_id
+        WHERE ci.compra_id = ?
+        ORDER BY ci.id
+      `, [compraId], (itensErr, itens) => {
+        if (itensErr) return res.status(500).json({ error: itensErr.message });
+
+        res.json({
+          ...conta,
+          compra: compra || null,
+          itens_compra: itens || []
+        });
+      });
+    });
+  });
+});
+
 router.get('/:id(\\d+)', (req, res) => {
   const { id } = req.params;
   db.get('SELECT * FROM financeiro WHERE id = ?', [id], (err, row) => {

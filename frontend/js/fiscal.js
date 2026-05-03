@@ -70,28 +70,37 @@ function renderFiscal() {
                     </div>
 
                     <div class="tab-pane fade" id="fiscal-notas-tab">
-                        <div class="row g-2 mb-3 align-items-center">
-                            <div class="col-md-4">
+                        <div class="row g-2 mb-3 align-items-end">
+                            <div class="col-md-3">
                                 <input type="text" id="fiscalBuscaNota" class="form-control" placeholder="Buscar por chave, venda ou protocolo" oninput="renderTabelaFiscalNotas()">
                             </div>
-                            <div class="col-md-3">
-                                <select id="fiscalFiltroStatus" class="form-control" onchange="renderTabelaFiscalNotas()">
+                            <div class="col-md-2">
+                                <select id="fiscalFiltroStatus" class="form-select" onchange="renderTabelaFiscalNotas()">
                                     <option value="">Todos os status</option>
                                     <option value="autorizado">Autorizado</option>
+                                    <option value="cancelado">Cancelada</option>
                                     <option value="rejeitada">Rejeitada</option>
                                     <option value="erro">Erro</option>
                                     <option value="pendente">Pendente</option>
                                 </select>
                             </div>
-                            <div class="col-md-3">
-                                <button class="btn btn-primary w-100" onclick="carregarFiscalNotas()">
-                                    <i class="fas fa-rotate-right"></i> Atualizar Notas
-                                </button>
+                            <div class="col-md-2">
+                                <label class="form-label small mb-0 text-muted">Data inicial</label>
+                                <input type="date" id="fiscalFiltroDataInicio" class="form-control form-control-sm" onchange="renderTabelaFiscalNotas()">
                             </div>
                             <div class="col-md-2">
-                                <label class="form-check-label text-nowrap" style="font-size:14px;">
+                                <label class="form-label small mb-0 text-muted">Data final</label>
+                                <input type="date" id="fiscalFiltroDataFim" class="form-control form-control-sm" onchange="renderTabelaFiscalNotas()">
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-primary w-100" onclick="carregarFiscalNotas()">
+                                    <i class="fas fa-rotate-right"></i> Atualizar
+                                </button>
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-check-label text-nowrap small" style="font-size:13px;">
                                     <input type="checkbox" class="form-check-input me-1" id="verTodasNotasFiscaisCheck" onchange="toggleVerTodasNotasFiscais()" ${verTodasNotasFiscais ? 'checked' : ''}>
-                                    Ver todas
+                                    Todas
                                 </label>
                             </div>
                         </div>
@@ -342,6 +351,11 @@ function carregarFiscalNotas() {
         method: 'GET',
         success: function(notas) {
             fiscalNotasCache = Array.isArray(notas) ? notas : [];
+
+            // Debug: mostrar status únicos
+            const statusUnicos = [...new Set(fiscalNotasCache.map(n => n.status).filter(Boolean))];
+            console.log('Status únicos encontrados:', statusUnicos);
+
             renderTabelaFiscalNotas();
         },
         error: function(xhr) {
@@ -357,6 +371,10 @@ function carregarFiscalNotas() {
 function renderTabelaFiscalNotas() {
     const termo = ($('#fiscalBuscaNota').val() || '').toLowerCase().trim();
     const status = ($('#fiscalFiltroStatus').val() || '').toLowerCase().trim();
+    const dataInicio = $('#fiscalFiltroDataInicio').val();
+    const dataFim = $('#fiscalFiltroDataFim').val();
+
+    console.log('Filtro status:', status, 'Total notas:', fiscalNotasCache.length);
 
     const notas = fiscalNotasCache.filter(n => {
         const matchTermo = !termo || [n.chave_acesso, n.venda_codigo, n.protocolo, n.recibo, n.xml_retorno, n.xml_enviado]
@@ -365,9 +383,38 @@ function renderTabelaFiscalNotas() {
             .toLowerCase()
             .includes(termo);
 
-        const matchStatus = !status || String(n.status || '').toLowerCase().includes(status);
-        return matchTermo && matchStatus;
+        const notaStatus = String(n.status || '').toLowerCase().trim();
+        let matchStatus = true;
+        if (status) {
+            if (status === 'autorizado') {
+                matchStatus = notaStatus === 'autorizada' || notaStatus.includes('autoriz');
+            } else if (status === 'cancelado') {
+                matchStatus = notaStatus === 'cancelada' || notaStatus.includes('cancel');
+            } else {
+                matchStatus = notaStatus.includes(status);
+            }
+        }
+
+        // Filtro por data
+        let matchData = true;
+        if (n.created_at) {
+            const notaData = new Date(n.created_at);
+            const notaDataStr = notaData.toISOString().split('T')[0];
+
+            if (dataInicio && notaDataStr < dataInicio) {
+                matchData = false;
+            }
+            if (dataFim && notaDataStr > dataFim) {
+                matchData = false;
+            }
+        } else if (dataInicio || dataFim) {
+            matchData = false;
+        }
+
+        return matchTermo && matchStatus && matchData;
     });
+
+    console.log('Notas filtradas:', notas.length, 'de', fiscalNotasCache.length);
 
     const html = `
         <div class="table-responsive">
@@ -421,6 +468,7 @@ function getBadgeFiscalClass(status) {
     const s = String(status || '').toLowerCase();
 
     if (s.includes('autoriz')) return 'bg-success';
+    if (s.includes('cancel')) return 'bg-dark';
     if (s.includes('rejeit')) return 'bg-danger';
     if (s.includes('erro')) return 'bg-warning text-dark';
 
