@@ -155,6 +155,17 @@ function loadPage(page) {
             ativarPdvFullscreen();
         } else {
             desativarPdvFullscreen();
+            // Garantir que o menu esteja fechado ao sair do PDV
+            document.body.classList.remove('menu-open');
+            document.body.classList.remove('pdv-mode');
+            // Restaurar foco na página após sair do modo PDV
+            setTimeout(() => {
+                document.body.focus();
+                // Forçar reflow do body para garantir que cliques funcionem
+                document.body.style.display = 'none';
+                document.body.offsetHeight; // trigger reflow
+                document.body.style.display = '';
+            }, 50);
         }
     }
 
@@ -239,6 +250,49 @@ function formatarDataHoraBR(dataHora) {
   const [ano, mes, dia] = data.split('-');
 
   return `${dia}/${mes}/${ano} ${hora}`;
+}
+
+// Formata CNPJ: 65957340000150 -> 65.957.340/0001-50
+function formatarCNPJ(cnpj) {
+  if (!cnpj) return '';
+  const numeros = String(cnpj).replace(/\D/g, '');
+  if (numeros.length !== 14) return cnpj;
+  return numeros.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+}
+
+// Formata CPF: 12345678901 -> 123.456.789-01
+function formatarCPF(cpf) {
+  if (!cpf) return '';
+  const numeros = String(cpf).replace(/\D/g, '');
+  if (numeros.length !== 11) return cpf;
+  return numeros.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+}
+
+// Formata CPF ou CNPJ automaticamente
+function formatarCpfCnpj(valor) {
+  if (!valor) return '';
+  const numeros = String(valor).replace(/\D/g, '');
+  if (numeros.length === 11) return formatarCPF(numeros);
+  if (numeros.length === 14) return formatarCNPJ(numeros);
+  return valor;
+}
+
+// Formata CPF/CNPJ em tempo real (para inputs)
+function formatCpfCnpjInput(input) {
+    let value = input.value.replace(/\D/g, '');
+    if (value.length <= 11) {
+        // CPF: 000.000.000-00
+        value = value.replace(/(\d{3})(\d)/, '$1.$2');
+        value = value.replace(/(\d{3})(\d)/, '$1.$2');
+        value = value.replace(/(\d{3})(\d)/, '$1-$2');
+    } else {
+        // CNPJ: 00.000.000/0000-00
+        value = value.replace(/(\d{2})(\d)/, '$1.$2');
+        value = value.replace(/(\d{3})(\d)/, '$1.$2');
+        value = value.replace(/(\d{3})(\d)/, '$1/$2');
+        value = value.replace(/(\d{4})(\d)/, '$1-$2');
+    }
+    input.value = value;
 }
 
 function showNotification(mensagem, tipo = 'success') {

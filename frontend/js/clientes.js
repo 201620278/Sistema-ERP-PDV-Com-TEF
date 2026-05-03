@@ -55,7 +55,7 @@ function renderClientes(clientes) {
                             ${clientes.map(c => `
                                 <tr>
                                     <td>${c.nome}</td>
-                                    <td>${c.cpf_cnpj || '-'}</td>
+                                    <td>${formatarCpfCnpj(c.cpf_cnpj) || '-'}</td>
                                     <td>${c.telefone || '-'}</td>
                                     <td>${c.email || '-'}</td>
                                     <td>${formatCurrency(c.limite_credito)}</td>
@@ -147,7 +147,7 @@ function showClienteModal(cliente = null) {
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label for="cpf_cnpj" class="form-label">CPF/CNPJ</label>
-                                    <input type="text" class="form-control" id="cpf_cnpj" value="${isEdit ? (cliente.cpf_cnpj || '') : ''}">
+                                    <input type="text" class="form-control" id="cpf_cnpj" value="${isEdit ? (formatarCpfCnpj(cliente.cpf_cnpj) || '') : ''}" oninput="formatCpfCnpjInput(this)" maxlength="18">
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label for="telefone" class="form-label">Telefone</label>
@@ -363,7 +363,7 @@ function viewCliente(id) {
                             </div>
                             <div class="modal-body">
                                 <p><strong>Nome:</strong> ${cliente.nome}</p>
-                                <p><strong>CPF/CNPJ:</strong> ${cliente.cpf_cnpj || '-'}</p>
+                                <p><strong>CPF/CNPJ:</strong> ${formatarCpfCnpj(cliente.cpf_cnpj) || '-'}</p>
                                 <p><strong>Telefone:</strong> ${cliente.telefone || '-'}</p>
                                 <p><strong>Email:</strong> ${cliente.email || '-'}</p>
                                 <p><strong>CEP:</strong> ${cliente.cep || '-'}</p>

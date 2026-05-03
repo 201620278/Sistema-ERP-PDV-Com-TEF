@@ -204,6 +204,18 @@ function createWindow(serverPort) {
     }
   });
 
+  // Forçar foco da janela quando ela for mostrada
+  mainWindow.on('show', () => {
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+  });
+
+  // Restaurar foco quando a janela é restaurada
+  mainWindow.on('restore', () => {
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+  });
+
   esperarServidor(`${baseUrl}/ping`)
     .then(() => {
       return carregarJanelaComRobustez(mainWindow, `${baseUrl}/login`);
@@ -211,6 +223,11 @@ function createWindow(serverPort) {
     .then(() => {
       mainWindow.maximize();
       mainWindow.show();
+      // Garantir foco após mostrar
+      setTimeout(() => {
+        mainWindow.focus();
+        mainWindow.webContents.focus();
+      }, 100);
     })
     .catch((error) => {
       dialog.showErrorBox(

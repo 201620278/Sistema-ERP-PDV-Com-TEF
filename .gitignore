@@ -24,9 +24,19 @@ dados/
 *.db-journal
 
 # Arquivos sensíveis e certificados
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+certificado*
 certificado_teste.pfx
+backend/certificados/*.pfx
+backend/certificados/*.p12
 backend/storage/certificados/
 backend/storage/temp-certificados/
+backend/banco/fiscal/certificados/
+scripts/
 
 # XML e arquivos de debug fiscal
 backend/storage/xml/

@@ -49,6 +49,41 @@
   padding: 8px 12px;
   border-radius: 999px;
   font-weight: bold;
+  animation: pulse-vermelho 1.5s infinite;
+}
+
+@keyframes pulse-vermelho {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Botão de fechamento de caixa */
+.btn-fechamento-caixa {
+  background: #f59e0b;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.btn-fechamento-caixa:hover {
+  background: #d97706;
+  transform: translateY(-1px);
+}
+
+.btn-fechamento-caixa:active {
+  transform: translateY(0);
+}
+
+.btn-fechamento-caixa i {
+  font-size: 14px;
 }
 
 .pdv-grid {
@@ -66,6 +101,33 @@
   border: 1px solid #e5e7eb;
   box-sizing: border-box;
   min-width: 0;
+}
+
+/* Cards laterais fixos (sticky) */
+.pdv-busca,
+.pdv-resumo {
+  position: sticky;
+  top: 12px;
+  align-self: start;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+
+/* Scrollbar estilizada para os cards */
+.pdv-busca::-webkit-scrollbar,
+.pdv-resumo::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pdv-busca::-webkit-scrollbar-track,
+.pdv-resumo::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pdv-busca::-webkit-scrollbar-thumb,
+.pdv-resumo::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
 }
 
 .pdv-card h2 {
@@ -322,8 +384,8 @@ body.pdv-mode main.col-lg-10 {
   max-width: 100% !important;
 }
 
-/* Mostrar sidebar quando menu estiver aberto */
-body.menu-open #sidebar {
+/* Mostrar sidebar quando menu estiver aberto no PDV */
+body.pdv-mode.menu-open #sidebar {
   display: block !important;
   position: fixed;
   z-index: 10000;
@@ -331,7 +393,8 @@ body.menu-open #sidebar {
   height: 100vh;
 }
 
-body.menu-open::before {
+/* Overlay só funciona quando PDV está ativo */
+body.pdv-mode.menu-open::before {
   content: '';
   position: fixed;
   top: 0;
@@ -340,4 +403,92 @@ body.menu-open::before {
   bottom: 0;
   background: rgba(0,0,0,0.5);
   z-index: 9999;
+}
+
+/* Calculadora PDV */
+.pdv-calculadora {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.pdv-calculadora h3 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.calc-display {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 18px;
+  font-weight: 600;
+  text-align: right;
+  margin-bottom: 8px;
+  min-height: 42px;
+  word-break: break-all;
+}
+
+.calc-botoes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.calc-btn {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: #1e293b;
+}
+
+.calc-btn:hover {
+  background: #e2e8f0;
+  transform: translateY(-1px);
+}
+
+.calc-btn:active {
+  transform: translateY(0);
+}
+
+.calc-op {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.calc-op:hover {
+  background: #bfdbfe;
+}
+
+.calc-clear {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.calc-clear:hover {
+  background: #fecaca;
+}
+
+.calc-igual {
+  background: #16a34a;
+  color: white;
+  border-color: #16a34a;
+  grid-column: span 4;
+  margin-top: 6px;
+}
+
+.calc-igual:hover {
+  background: #15803d;
 }

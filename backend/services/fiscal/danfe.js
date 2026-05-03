@@ -1,5 +1,13 @@
 const QRCode = require('qrcode');
 
+// Formata CNPJ: 65957340000150 -> 65.957.340/0001-50
+function formatarCNPJ(cnpj) {
+  if (!cnpj) return '';
+  const numeros = String(cnpj).replace(/\D/g, '');
+  if (numeros.length !== 14) return cnpj;
+  return numeros.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+}
+
 async function gerarDanfeHtml({ venda, itens, empresa, chave, numero, serie, qrCodeUrl, tributos }) {
   const qrCodeDataUrl = qrCodeUrl ? await QRCode.toDataURL(qrCodeUrl) : '';
 
@@ -37,7 +45,7 @@ async function gerarDanfeHtml({ venda, itens, empresa, chave, numero, serie, qrC
 <body>
   <div class="center">
     <h2>${empresa.nome || ''}</h2>
-    <p>CNPJ: ${empresa.cnpj || ''}</p>
+    <p>CNPJ: ${formatarCNPJ(empresa.cnpj)}</p>
     <p>${empresa.endereco || ''}</p>
     <p>DANFE NFC-e - Documento Auxiliar</p>
     <p>NFC-e nº ${numero} Série ${serie}</p>

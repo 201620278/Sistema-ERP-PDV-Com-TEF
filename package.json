@@ -49,6 +49,7 @@
     ],
     "files": [
       "backend/**/*",
+      "!backend/schemas/**/*",
       "frontend/**/*",
       "electron.js",
       "preload.js",

@@ -81,7 +81,7 @@ function exibirFormularioFornecedor(fornecedor = null) {
           </div>
           <div class="form-group">
             <label>CPF/CNPJ</label>
-            <input type="text" id="cpfCnpjFornecedor" class="form-control" placeholder="CPF ou CNPJ" value="${f.cpf_cnpj || ''}">
+            <input type="text" id="cpfCnpjFornecedor" class="form-control" placeholder="CPF ou CNPJ" value="${formatarCpfCnpj(f.cpf_cnpj) || ''}" oninput="formatCpfCnpjInput(this)" maxlength="18">
           </div>
           <div class="form-group">
             <label>Inscrição Estadual</label>
@@ -217,7 +217,7 @@ function renderFornecedores(lista) {
       <td>${escapeHtml(fornecedor.contato || '-')}</td>
       <td>${escapeHtml(fornecedor.telefone || '-')}</td>
       <td>${escapeHtml(fornecedor.cidade || '-')}</td>
-      <td>${escapeHtml(fornecedor.cpf_cnpj || '-')}</td>
+      <td>${formatarCpfCnpj(fornecedor.cpf_cnpj) || '-'}</td>
       <td>${escapeHtml(fornecedor.inscricao_estadual || '-')}</td>
       <td>
         <div class="acoes-tabela">

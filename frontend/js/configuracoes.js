@@ -336,6 +336,10 @@ function renderConfigField(config) {
         return `<input type="text" class="form-control" id="${config.chave}" value="${value}" oninput="formatPhone(this)">`;
     }
 
+    if (config.chave === 'cnpj') {
+        return `<input type="text" class="form-control" id="${config.chave}" value="${formatarCNPJ(value)}" oninput="formatCNPJInput(this)" maxlength="18">`;
+    }
+
     switch(config.tipo) {
         case 'boolean':
             return `
@@ -537,6 +541,18 @@ function formatCep(input) {
     let value = input.value.replace(/\D/g, '');
     if (value.length <= 8) {
         value = value.replace(/(\d{5})(\d{3})/, '$1-$2');
+        input.value = value;
+    }
+}
+
+// Formatar CNPJ em tempo real
+function formatCNPJInput(input) {
+    let value = input.value.replace(/\D/g, '');
+    if (value.length <= 14) {
+        value = value.replace(/(\d{2})(\d)/, '$1.$2');
+        value = value.replace(/(\d{3})(\d)/, '$1.$2');
+        value = value.replace(/(\d{3})(\d)/, '$1/$2');
+        value = value.replace(/(\d{4})(\d)/, '$1-$2');
         input.value = value;
     }
 }

@@ -12,7 +12,10 @@
     </div>
 
     <div class="pdv-status">
-      <span id="statusCaixaPdv" class="caixa-aberto">🟢 Caixa Aberto</span>
+      <span id="statusCaixaPdv" class="caixa-fechado">� Caixa Fechado</span>
+      <button id="btnFechamentoCaixaPdv" class="btn-fechamento-caixa" title="Fechamento de Caixa (F7)">
+        <i class="fas fa-cash-register"></i> Fechar Caixa
+      </button>
       <span id="operadorPdv">Operador: Admin</span>
       <span id="dataHoraPdv"></span>
     </div>
@@ -34,6 +37,34 @@
 
       <div id="listaProdutosPdv" class="lista-produtos">
         <p class="vazio">Digite para buscar produtos...</p>
+      </div>
+
+      <!-- Calculadora -->
+      <div class="pdv-calculadora">
+        <h3><i class="fas fa-calculator"></i> Calculadora</h3>
+        <div class="calc-display" id="calcDisplay">0</div>
+        <div class="calc-botoes">
+          <button class="calc-btn" data-value="7">7</button>
+          <button class="calc-btn" data-value="8">8</button>
+          <button class="calc-btn" data-value="9">9</button>
+          <button class="calc-btn calc-op" data-value="/">÷</button>
+
+          <button class="calc-btn" data-value="4">4</button>
+          <button class="calc-btn" data-value="5">5</button>
+          <button class="calc-btn" data-value="6">6</button>
+          <button class="calc-btn calc-op" data-value="*">×</button>
+
+          <button class="calc-btn" data-value="1">1</button>
+          <button class="calc-btn" data-value="2">2</button>
+          <button class="calc-btn" data-value="3">3</button>
+          <button class="calc-btn calc-op" data-value="-">−</button>
+
+          <button class="calc-btn" data-value="0">0</button>
+          <button class="calc-btn" data-value=".">.</button>
+          <button class="calc-btn calc-clear" data-value="C">C</button>
+          <button class="calc-btn calc-op" data-value="+">+</button>
+        </div>
+        <button class="calc-btn calc-igual" data-value="=">=</button>
       </div>
     </section>
 
@@ -119,6 +150,7 @@
   <footer class="pdv-atalhos">
     <span>F1 Buscar</span>
     <span>F4 Quantidade</span>
+    <span>F7 Fechar Caixa</span>
     <span>F8 Desconto</span>
     <span>F10 Finalizar</span>
     <span>ESC Cancelar</span>

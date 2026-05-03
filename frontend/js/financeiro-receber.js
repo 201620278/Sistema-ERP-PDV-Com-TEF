@@ -621,13 +621,13 @@ function gerarHtmlExtratoDuplicata(dados) {
         <div class="empresa">
           <h1>${dados.empresa.nome || 'Empresa'}</h1>
           <p>${dados.empresa.endereco || ''}</p>
-          <p>CNPJ: ${dados.empresa.cnpj || '-'}</p>
+          <p>CNPJ: ${formatarCNPJ(dados.empresa.cnpj) || '-'}</p>
           <p>Tel: ${dados.empresa.telefone || '-'}</p>
         </div>
         <div class="cliente">
           <h2>Extrato de Dívida</h2>
           <p>${dados.cliente.nome}</p>
-          <p>${dados.cliente.cpf || ''}</p>
+          <p>${formatarCPF(dados.cliente.cpf) || ''}</p>
           <p>${dados.cliente.telefone || ''}</p>
           <p>${dados.cliente.endereco || ''}</p>
           <p>Gerado em: ${dados.geradoEm}</p>

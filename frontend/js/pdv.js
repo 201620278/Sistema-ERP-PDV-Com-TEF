@@ -6,6 +6,7 @@ let clientesResultados = [];
 let vendaPrazoInfo = null;
 let vendaEmProcessamento = false;
 let pdvClockInterval = null;
+let caixaAberto = false;
 
 function normalizarTexto(texto) {
     return String(texto || '')
@@ -42,10 +43,57 @@ function loadPDV() {
 
 function inicializarPDV() {
     $('#operador-nome').text(obterNomeOperador());
+    verificarStatusCaixa(); // Verifica caixa antes de iniciar
     atualizarCarrinho();
     iniciarRelogioPDV();
     bindEventosPDV();
     focarCampoCodigo();
+    
+    // Verificar status do caixa a cada 30 segundos
+    setInterval(verificarStatusCaixa, 30000);
+}
+
+// Verificar status do caixa
+function verificarStatusCaixa() {
+    $.ajax({
+        url: `${API_URL}/caixa/aberto`,
+        method: 'GET',
+        cache: false,
+        success: function(caixa) {
+            caixaAberto = !!caixa;
+            atualizarStatusCaixaUI();
+        },
+        error: function() {
+            caixaAberto = false;
+            atualizarStatusCaixaUI();
+        }
+    });
+}
+
+// Atualizar UI do status do caixa
+function atualizarStatusCaixaUI() {
+    const statusEl = $('#statusCaixaPdv');
+    const btnFinalizar = $('#btnFinalizarVendaPdv');
+    const statusAnterior = statusEl.hasClass('caixa-aberto');
+
+    if (caixaAberto) {
+        statusEl.text('🟢 Caixa Aberto');
+        statusEl.removeClass('caixa-fechado').addClass('caixa-aberto');
+        btnFinalizar.prop('disabled', carrinho.length === 0);
+        // Mostrar notificação apenas quando mudar de fechado para aberto
+        if (!statusAnterior && statusEl.data('inicializado')) {
+            showNotification('Caixa aberto! Pronto para vender.', 'success');
+        }
+    } else {
+        statusEl.text('🔴 Caixa Fechado');
+        statusEl.removeClass('caixa-aberto').addClass('caixa-fechado');
+        btnFinalizar.prop('disabled', true);
+        // Mostrar notificação apenas quando mudar de aberto para fechado
+        if (statusAnterior) {
+            showNotification('Caixa fechado. Abra o caixa antes de vender.', 'warning');
+        }
+    }
+    statusEl.data('inicializado', true);
 }
 
 function focarCampoCodigo() {
@@ -101,6 +149,11 @@ function bindEventosPDV() {
                 showNotification('Nenhum item para alterar quantidade.', 'warning');
             }
         }
+        if (e.key === 'F7') {
+            e.preventDefault();
+            e.stopPropagation();
+            abrirFechamentoCaixa();
+        }
         if (e.key === 'F8') {
             e.preventDefault();
             e.stopPropagation();
@@ -142,6 +195,7 @@ function bindEventosPDV() {
     $('#btnLimparVendaPdv').off('click').on('click', limparCarrinho);
     $('#btnCancelarVendaPdv').off('click').on('click', cancelarVendaAtual);
     $('#btnFinalizarVendaPdv').off('click').on('click', abrirModalDecisaoFiscal);
+    $('#btnFechamentoCaixaPdv').off('click').on('click', abrirFechamentoCaixa);
     $('#formaPagamentoPdv').off('change').on('change', aoAlterarFormaPagamento);
     $('#formaPagamentoPdv').val('');
     $('#clienteBusca').off('input').on('input', async function () {
@@ -175,24 +229,44 @@ function bindEventosPDV() {
         }
     });
 
+    // Calculadora PDV
+    let calcExpression = '';
+    const calcDisplay = $('#calcDisplay');
+
     $('.calc-btn').off('click').on('click', function() {
         const valor = String($(this).data('value'));
-        const input = $('#buscaProdutoPdv');
-        const atual = input.val();
 
         if (valor === 'C') {
-            input.val('');
+            calcExpression = '';
+            calcDisplay.text('0');
         } else if (valor === '=') {
-            const codigo = input.val().trim();
-            if (codigo) {
-                adicionarProdutoPorCodigo(codigo);
-                input.val('');
+            if (calcExpression) {
+                try {
+                    // Avaliar expressão matemática de forma segura
+                    const resultado = Function('"use strict"; return (' + calcExpression + ')')();
+                    calcDisplay.text(resultado.toLocaleString('pt-BR', { maximumFractionDigits: 2 }));
+                    calcExpression = String(resultado);
+                } catch (e) {
+                    calcDisplay.text('Erro');
+                    calcExpression = '';
+                }
             }
         } else {
-            input.val(atual + valor);
+            // Números e operadores
+            if (calcExpression === '' && ['/', '*', '+', '-'].includes(valor)) {
+                // Não começar com operador
+                return;
+            }
+            calcExpression += valor;
+            calcDisplay.text(calcExpression);
         }
 
-        input.trigger('focus');
+        // Após clicar em =, focar no campo de busca
+        if (valor === '=') {
+            setTimeout(() => {
+                $('#buscaProdutoPdv').trigger('focus');
+            }, 100);
+        }
     });
 
     $('#descontoPdv').off('input').on('input', function() {
@@ -261,7 +335,7 @@ function renderizarResultadosClientes(clientes) {
     container.html(clientesResultados.map(cliente => `
         <div class="cliente-item" data-id="${cliente.id}">
             <strong>${escapeHtml(cliente.nome)}</strong><br>
-            <small>${escapeHtml(cliente.cpf_cnpj || '')}${cliente.telefone ? ' - ' + escapeHtml(cliente.telefone) : ''}</small>
+            <small>${formatarCpfCnpj(cliente.cpf_cnpj) || ''}${cliente.telefone ? ' - ' + escapeHtml(cliente.telefone) : ''}</small>
         </div>
     `).join(''));
 }
@@ -269,7 +343,7 @@ function renderizarResultadosClientes(clientes) {
 function selecionarCliente(cliente) {
     clienteSelecionado = cliente;
     $('#clienteSelecionado').show();
-    $('#clienteSelecionadoNome').text(`${cliente.nome}${cliente.cpf_cnpj ? ' - ' + cliente.cpf_cnpj : ''}`);
+    $('#clienteSelecionadoNome').text(`${cliente.nome}${cliente.cpf_cnpj ? ' - ' + formatarCpfCnpj(cliente.cpf_cnpj) : ''}`);
     $('#clienteBusca').val(cliente.nome);
     $('#clienteResultados').empty();
 }
@@ -414,6 +488,7 @@ function adicionarItemNoCarrinho(produto, quantidade, precoUnitario, mensagemExt
 
     atualizarCarrinho();
     showNotification(`${produto.nome} adicionado ao carrinho${mensagemExtra}.`, 'success');
+    focarCampoCodigo();
 }
 
 function adicionarProdutoPorCodigo(codigo) {
@@ -566,7 +641,8 @@ function atualizarCarrinho() {
     calcularTotal();
 
     const total = calcularTotalValor();
-    $('#btnFinalizarVendaPdv').prop('disabled', carrinho.length === 0 || total <= 0);
+    // Só habilita finalizar se caixa aberto E houver itens no carrinho
+    $('#btnFinalizarVendaPdv').prop('disabled', !caixaAberto || carrinho.length === 0 || total <= 0);
     $('#btnCancelarVendaPdv').prop('disabled', carrinho.length === 0);
 }
 
@@ -746,7 +822,7 @@ function selecionarPagamento(tipo) {
                     $('#cliente-prazo-sugestoes').html(
                         filtrados.map(c => `
                             <button type="button" class="list-group-item list-group-item-action" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}">
-                                ${escapeHtml(c.nome || '')}${c.cpf_cnpj ? ' - ' + escapeHtml(c.cpf_cnpj) : ''}
+                                ${escapeHtml(c.nome || '')}${c.cpf_cnpj ? ' - ' + formatarCpfCnpj(c.cpf_cnpj) : ''}
                             </button>
                         `).join('')
                     ).show();
@@ -831,6 +907,12 @@ function confirmarPagamento(modalEl, onConfirm) {
 function abrirModalDecisaoFiscal(skipPagamento = false) {
     if (vendaEmProcessamento) {
         showNotification('A venda já está sendo processada.', 'warning');
+        return;
+    }
+
+    // Verificar se caixa está aberto
+    if (!caixaAberto) {
+        showNotification('🔴 Caixa fechado. Abra o caixa antes de vender.', 'danger');
         return;
     }
 
@@ -1861,6 +1943,31 @@ function atualizarDataHoraPdv() {
   el.textContent = agora.toLocaleString("pt-BR");
 }
 
+// Função para abrir fechamento de caixa
+function abrirFechamentoCaixa() {
+    if (typeof loadPage === 'function') {
+        // Fecha o menu lateral se estiver aberto
+        if (typeof fecharMenuPdv === 'function') {
+            fecharMenuPdv();
+        } else {
+            document.body.classList.remove('menu-open');
+        }
+        // Sai do modo fullscreen do PDV antes de navegar
+        if (typeof desativarPdvFullscreen === 'function') {
+            desativarPdvFullscreen();
+        }
+        // Remove a classe do body
+        document.body.classList.remove('pdv-mode');
+        // Carrega a página de caixa
+        loadPage('caixa');
+        // Atualiza o menu ativo
+        $('.nav-link').removeClass('active');
+        $('.nav-link[data-page="caixa"]').addClass('active');
+    } else {
+        showNotification('Erro ao navegar para fechamento de caixa.', 'danger');
+    }
+}
+
 setInterval(atualizarDataHoraPdv, 1000);
 atualizarDataHoraPdv();
 
@@ -1873,6 +1980,11 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "F2") {
     e.preventDefault();
     document.getElementById("buscaProdutoPdv")?.focus();
+  }
+
+  if (e.key === "F7") {
+    e.preventDefault();
+    abrirFechamentoCaixa();
   }
 
   if (e.key === "F10") {
