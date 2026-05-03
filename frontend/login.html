@@ -26,7 +26,7 @@
 <body>
     <div class="card login-card">
         <div class="card-header text-center">
-            <h4 class="mb-0"><i class="fas fa-store"></i> Mercadão</h4>
+            <h4 class="mb-0"><i class="fas fa-store"></i> ESQUINÃO DA ECONOMIA</h4>
             <small class="text-white-50">Sistema de Gestão</small>
         </div>
         <div class="card-body p-4">
@@ -52,25 +52,6 @@
     <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="js/login.js"></script>
     <script>
-        // FOCO DE EMERGÊNCIA - executa imediatamente
-        (function forcarFocoLogin() {
-            const campo = document.getElementById('username');
-            if (campo) {
-                campo.focus();
-                campo.select();
-            }
-            // Tentativas sequenciais
-            [100, 300, 600, 1000].forEach(t => {
-                setTimeout(() => {
-                    const c = document.getElementById('username');
-                    if (c && document.activeElement !== c) {
-                        c.focus({ preventScroll: true });
-                        c.select();
-                    }
-                }, t);
-            });
-        })();
-
         // Carregar imagem de fundo configurada
         fetch('/api/configuracoes/login_background')
             .then(r => r.json())

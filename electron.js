@@ -10,6 +10,26 @@ app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-software-rasterizer');
 app.commandLine.appendSwitch('disable-features', 'UseSkiaRenderer');
 
+// 🎯 FOCO EXTREMO - Previne perda de foco na janela
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('force-fieldtrials', '*');
+
+// Quando o app ganha foco, força a janela a ficar ativa
+app.on('browser-window-focus', () => {
+  console.log('App ganhou foco');
+});
+
+app.on('browser-window-blur', () => {
+  console.log('App perdeu foco - tentando recuperar...');
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    setTimeout(() => {
+      mainWindow.focus();
+      mainWindow.webContents.focus();
+    }, 100);
+  }
+});
+
 let mainWindow;
 
 function obterPortaServidor() {
@@ -204,6 +224,8 @@ function createWindow(serverPort) {
     height: 800,
     show: false,
     autoHideMenuBar: true,
+    focusable: true,
+    skipTaskbar: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true
@@ -214,6 +236,13 @@ function createWindow(serverPort) {
   mainWindow.on('show', () => {
     mainWindow.focus();
     mainWindow.webContents.focus();
+  });
+
+  // Foco agressivo quando DOM estiver pronto
+  mainWindow.webContents.on('dom-ready', () => {
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+    console.log('DOM ready - foco forçado');
   });
 
   // Restaurar foco quando a janela é restaurada
@@ -233,9 +262,15 @@ function createWindow(serverPort) {
     mainWindow.webContents.focus();
   });
 
-  // Detectar quando perde foco
+  // Detectar quando perde foco e tentar recuperar
   mainWindow.on('blur', () => {
     console.log('Janela perdeu foco');
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused()) {
+        mainWindow.focus();
+        mainWindow.webContents.focus();
+      }
+    }, 100);
   });
 
   // IPC para forçar reflow quando solicitado pelo frontend
@@ -248,6 +283,15 @@ function createWindow(serverPort) {
         document.body.style.display = '';
         console.log('Reflow forçado pelo Electron');
       `);
+    }
+  });
+
+  ipcMain.on('focar-janela', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.focus();
+      mainWindow.webContents.focus();
+      mainWindow.moveTop();
+      console.log('Janela focada via IPC');
     }
   });
 
@@ -291,6 +335,14 @@ function createWindow(serverPort) {
       app.quit();
     });
 }
+
+app.on('activate', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+    mainWindow.moveTop();
+  }
+});
 
 app.whenReady().then(() => {
   try {
