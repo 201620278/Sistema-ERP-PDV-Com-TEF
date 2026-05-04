@@ -206,6 +206,7 @@ function createWindow(serverPort) {
     autoHideMenuBar: true,
     focusable: true,
     skipTaskbar: false,
+    icon: path.join(__dirname, 'assets/icon.ico'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

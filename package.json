@@ -5,9 +5,8 @@
   "author": "CDS Sistemas",
   "main": "electron.js",
   "scripts": {
-    "start": ".\\node_modules\\electron\\dist\\electron.exe .\\electron.js",
-    "server": "node backend/server.js",
-    "dist": "electron-builder --win nsis"
+    "start": ".\\node_modules\\.bin\\electron.cmd .",
+    "build": "electron-builder"
   },
   "dependencies": {
     "axios": "^1.15.0",
@@ -32,48 +31,21 @@
   "devDependencies": {
     "@electron/rebuild": "^3.7.2",
     "electron": "22.3.27",
-    "electron-builder": "25.1.8",
+    "electron-builder": "^25.1.8",
     "nodemon": "^3.0.1"
   },
   "build": {
-    "appId": "com.cd.sistemas",
-    "productName": "Esquinão da Economia",
+    "appId": "com.mercantil.sistema",
+    "productName": "Mercantil Sistema",
     "directories": {
       "output": "dist"
     },
-    "asar": true,
-    "asarUnpack": [
-      "node_modules/sqlite3/**/*",
-      "node_modules/escpos/**/*",
-      "node_modules/escpos-usb/**/*"
-    ],
     "files": [
-      "backend/**/*",
-      "!backend/schemas/**/*",
-      "frontend/**/*",
-      "electron.js",
-      "preload.js",
-      "package.json",
-      "assets/**/*"
+      "**/*"
     ],
     "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
+      "target": "nsis",
       "icon": "assets/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Esquinão da Economia",
-      "artifactName": "Esquinão-da-Economia-Setup-${version}-x64.exe"
     }
   }
 }
