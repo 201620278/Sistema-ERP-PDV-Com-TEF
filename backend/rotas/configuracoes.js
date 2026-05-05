@@ -229,6 +229,49 @@ router.get('/backup-path', (req, res) => {
   );
 });
 
+// buscar impressora configurada
+router.get('/impressora_cupom', (req, res) => {
+  db.get(
+    "SELECT valor FROM configuracoes WHERE chave = 'impressora_cupom'",
+    [],
+    (err, row) => {
+      if (err) {
+        return res.status(500).json({ sucesso: false });
+      }
+
+      res.json({
+        sucesso: true,
+        caminho: row?.valor || null
+      });
+    }
+  );
+});
+
+// salvar impressora configurada
+router.post('/impressora_cupom', (req, res) => {
+  const { caminho } = req.body;
+
+  if (!caminho) {
+    return res.status(400).json({ sucesso: false, mensagem: 'Nome da impressora inválido' });
+  }
+
+  const query = `
+    INSERT INTO configuracoes (chave, valor, tipo, descricao)
+    VALUES ('impressora_cupom', ?, 'text', 'Impressora de cupom fiscal')
+    ON CONFLICT(chave) DO UPDATE SET
+      valor = excluded.valor,
+      updated_at = datetime('now', 'localtime')
+  `;
+
+  db.run(query, [caminho], function (err) {
+    if (err) {
+      return res.status(500).json({ sucesso: false, erro: err.message });
+    }
+
+    res.json({ sucesso: true, mensagem: 'Impressora salva!' });
+  });
+});
+
 router.get('/', (req, res) => {
   db.all('SELECT * FROM configuracoes ORDER BY chave', (err, rows) => {
     if (err) {

@@ -65,6 +65,8 @@ function aplicarAlteracoesPosCriacao() {
   // Adicionar colunas na tabela usuarios
   aplicarAlteracaoSegura('usuarios', `ALTER TABLE usuarios ADD COLUMN ativo INTEGER DEFAULT 1`);
   aplicarAlteracaoSegura('usuarios', `ALTER TABLE usuarios ADD COLUMN nome TEXT`);
+  aplicarAlteracaoSegura('usuarios', `ALTER TABLE usuarios ADD COLUMN perfil TEXT DEFAULT 'USUARIO'`);
+  aplicarAlteracaoSegura('usuarios', `ALTER TABLE usuarios ADD COLUMN pode_alterar_senhas INTEGER DEFAULT 0`);
 
   const alteracoesProdutos = [
     `ALTER TABLE produtos ADD COLUMN categoria_id INTEGER`,
@@ -781,12 +783,26 @@ function inserirConfiguracoesPadrao() {
 
 function seedUsuarioAdmin() {
   const hash = bcrypt.hashSync('pdb100623', 10);
+
+  // Inserir ou ignorar se já existe
   db.run(`
-    INSERT OR IGNORE INTO usuarios (username, password_hash, role)
-    VALUES ('Diego', ?, 'admin')
+    INSERT OR IGNORE INTO usuarios (username, password_hash, role, nome, perfil, pode_alterar_senhas)
+    VALUES ('Diego', ?, 'admin', 'Diego', 'SUPER_ADMIN', 1)
   `, [hash], (err) => {
     if (err) console.error('Erro ao criar usuário administrador padrão:', err);
     else console.log('Usuário administrador padrão verificado (Diego)');
+  });
+
+  // Atualizar usuário existente para SUPER_ADMIN (caso já exista)
+  db.run(`
+    UPDATE usuarios
+    SET perfil = 'SUPER_ADMIN',
+        pode_alterar_senhas = 1,
+        nome = 'Diego'
+    WHERE username = 'Diego'
+  `, (err) => {
+    if (err) console.error('Erro ao atualizar perfil do administrador:', err);
+    else console.log('Perfil SUPER_ADMIN garantido para Diego');
   });
 }
 

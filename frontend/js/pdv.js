@@ -1573,6 +1573,7 @@ async function imprimirDANFEFiscal(vendaId) {
     try {
         const token = localStorage.getItem('token');
 
+        // Buscar DANFE
         const resposta = await fetch(`${API_URL}/fiscal/danfe/venda/${vendaId}`, {
             method: 'GET',
             headers: {
@@ -1592,12 +1593,36 @@ async function imprimirDANFEFiscal(vendaId) {
             return;
         }
 
-        // No Electron, usar janela nativa para comprovante ficar na frente
+        // No Electron, mostrar cupom e imprimir silenciosamente
         if (window.electronAPI?.abrirComprovante) {
-            window.electronAPI.abrirComprovante(texto);
+            try {
+                // Buscar impressora configurada
+                const respImpressora = await fetch(`${API_URL}/configuracoes/impressora_cupom`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                let deviceName = null;
+                try {
+                    const impressoraData = await respImpressora.json();
+                    if (impressoraData.caminho) {
+                        deviceName = impressoraData.caminho;
+                    }
+                } catch (e) {
+                    // Se não conseguir buscar, imprimir sem deviceName
+                }
+
+                // Abrir comprovante visível e imprimir silenciosamente
+                window.electronAPI.abrirComprovante(texto, { silent: true, deviceName });
+                showNotification('Cupom fiscal enviado para impressora.', 'success');
+            } catch (printError) {
+                console.error('Erro na impressão:', printError);
+                // Fallback: abrir janela sem impressão automática
+                window.electronAPI.abrirComprovante(texto);
+            }
             return;
         }
 
+        // Fallback para navegador
         const janela = window.open('', '_blank', 'width=420,height=720');
 
         if (!janela) {
@@ -1712,13 +1737,14 @@ function imprimirCupomNaoFiscal(vendaId, venda, total, desconto) {
             showNotification('Cupom enviado para impressora ESC/POS.', 'success');
         },
         error: function(xhr) {
-            console.warn('Falha ao imprimir via ESC/POS, usando fallback do navegador.', xhr);
-            // No Electron, usar janela nativa para comprovante ficar na frente
+            console.warn('Falha ao imprimir via ESC/POS, usando fallback.', xhr);
+            // No Electron, mostrar comprovante e imprimir silenciosamente
             if (window.electronAPI?.abrirComprovante) {
-                window.electronAPI.abrirComprovante(cupomHtml);
+                window.electronAPI.abrirComprovante(cupomHtml, { silent: true });
                 return;
             }
 
+            // Fallback para navegador
             const printWindow = window.open('', '_blank', 'width=420,height=720');
             if (!printWindow) {
                 showNotification('Permita pop-ups para imprimir o comprovante.', 'warning');

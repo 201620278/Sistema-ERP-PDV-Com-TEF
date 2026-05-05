@@ -35,8 +35,9 @@
     "nodemon": "^3.0.1"
   },
   "build": {
-    "appId": "com.mercantil.sistema",
-    "productName": "Mercantil Sistema",
+    "appId": "com.cdssistemas.mercantil",
+    "productName": "CDS Sistemas - Mercantil",
+    "copyright": "Copyright © 2026 CDS Sistemas",
     "directories": {
       "output": "dist"
     },
@@ -45,7 +46,17 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "publisherName": "CDS Sistemas"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "CDS Sistemas - Mercantil",
+      "artifactName": "CDS-Sistemas-Mercantil-Setup-${version}.${ext}",
+      "uninstallDisplayName": "CDS Sistemas - Mercantil"
     }
   }
 }

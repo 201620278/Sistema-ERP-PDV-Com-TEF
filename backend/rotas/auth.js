@@ -46,11 +46,29 @@ function verificarToken(req, res, next) {
 
 function exigirAdmin(req, res, next) {
   verificarToken(req, res, () => {
-    if (req.user?.role !== 'admin') {
-      return res.status(403).json({ error: 'Apenas administradores podem executar esta ação.' });
-    }
+    // Buscar dados completos do usuário incluindo perfil
+    db.get(
+      'SELECT id, username, role, COALESCE(perfil, \'USUARIO\') as perfil, pode_alterar_senhas FROM usuarios WHERE id = ?',
+      [req.user?.id],
+      (err, usuario) => {
+        if (err || !usuario) {
+          return res.status(403).json({ error: 'Erro ao verificar permissões.' });
+        }
 
-    next();
+        // Atualizar req.user com dados completos
+        req.user.perfil = usuario.perfil;
+        req.user.pode_alterar_senhas = usuario.pode_alterar_senhas;
+
+        // Verificar se é admin (role) ou tem perfil de ADMIN/SUPER_ADMIN
+        const isAdmin = req.user?.role === 'admin' || usuario.perfil === 'ADMIN' || usuario.perfil === 'SUPER_ADMIN';
+
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'Apenas administradores podem executar esta ação.' });
+        }
+
+        next();
+      }
+    );
   });
 }
 
@@ -141,7 +159,9 @@ router.get('/permissoes-disponiveis', exigirAdmin, (req, res) => {
 
 router.get('/usuarios', exigirAdmin, (req, res) => {
   db.all(
-    `SELECT id, username, role, COALESCE(ativo, 1) AS ativo, created_at 
+    `SELECT id, username, role, COALESCE(perfil, 'USUARIO') as perfil, 
+            COALESCE(pode_alterar_senhas, 0) as pode_alterar_senhas,
+            COALESCE(ativo, 1) AS ativo, created_at 
      FROM usuarios 
      ORDER BY username`,
     [],
@@ -183,6 +203,8 @@ router.post('/usuarios', exigirAdmin, (req, res) => {
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
   const role = req.body?.role === 'admin' ? 'admin' : 'operador';
+  const perfil = ['SUPER_ADMIN', 'ADMIN', 'USUARIO'].includes(req.body?.perfil) ? req.body.perfil : 'USUARIO';
+  const podeAlterarSenhas = req.body?.pode_alterar_senhas === 1 || req.body?.pode_alterar_senhas === true ? 1 : 0;
   const permissoes = Array.isArray(req.body?.permissoes) ? req.body.permissoes : [];
 
   if (!username || !password) {
@@ -191,6 +213,12 @@ router.post('/usuarios', exigirAdmin, (req, res) => {
 
   if (password.length < 4) {
     return res.status(400).json({ error: 'A senha deve ter pelo menos 4 caracteres.' });
+  }
+
+  // Verificar se o usuário logado pode criar este perfil
+  const perfilLogado = req.user?.perfil || 'USUARIO';
+  if (perfil === 'SUPER_ADMIN' && perfilLogado !== 'SUPER_ADMIN') {
+    return res.status(403).json({ error: 'Apenas SUPER_ADMIN pode criar outros SUPER_ADMINs.' });
   }
 
   db.get('SELECT id FROM usuarios WHERE username = ?', [username], (errBusca, existente) => {
@@ -205,8 +233,8 @@ router.post('/usuarios', exigirAdmin, (req, res) => {
     const hash = bcrypt.hashSync(password, 10);
 
     db.run(
-      `INSERT INTO usuarios (username, password_hash, role) VALUES (?, ?, ?)`,
-      [username, hash, role],
+      `INSERT INTO usuarios (username, password_hash, role, nome, perfil, pode_alterar_senhas) VALUES (?, ?, ?, ?, ?, ?)`,
+      [username, hash, role, username, perfil, podeAlterarSenhas],
       function (errInsert) {
         if (errInsert) {
           return res.status(500).json({ error: 'Erro ao cadastrar usuário.' });
@@ -219,6 +247,8 @@ router.post('/usuarios', exigirAdmin, (req, res) => {
             id: usuarioId,
             username,
             role,
+            perfil,
+            pode_alterar_senhas: podeAlterarSenhas,
             permissoes: PERMISSOES_DISPONIVEIS,
             message: 'Usuário administrador cadastrado com sucesso.'
           });
@@ -229,6 +259,8 @@ router.post('/usuarios', exigirAdmin, (req, res) => {
             id: usuarioId,
             username,
             role,
+            perfil,
+            pode_alterar_senhas: podeAlterarSenhas,
             permissoes,
             message: 'Usuário cadastrado com sucesso.'
           });
@@ -241,6 +273,8 @@ router.post('/usuarios', exigirAdmin, (req, res) => {
 router.put('/usuarios/:id', exigirAdmin, (req, res) => {
   const id = Number(req.params.id);
   const role = req.body?.role === 'admin' ? 'admin' : 'operador';
+  const perfil = ['SUPER_ADMIN', 'ADMIN', 'USUARIO'].includes(req.body?.perfil) ? req.body.perfil : 'USUARIO';
+  const podeAlterarSenhas = req.body?.pode_alterar_senhas === 1 || req.body?.pode_alterar_senhas === true ? 1 : 0;
   const permissoes = Array.isArray(req.body?.permissoes) ? req.body.permissoes : [];
   const password = String(req.body?.password || '');
 
@@ -248,7 +282,13 @@ router.put('/usuarios/:id', exigirAdmin, (req, res) => {
     return res.status(400).json({ error: 'ID inválido.' });
   }
 
-  db.get('SELECT id FROM usuarios WHERE id = ?', [id], (errBusca, usuario) => {
+  // Verificar se o usuário logado pode alterar para este perfil
+  const perfilLogado = req.user?.perfil || 'USUARIO';
+  if (perfil === 'SUPER_ADMIN' && perfilLogado !== 'SUPER_ADMIN') {
+    return res.status(403).json({ error: 'Apenas SUPER_ADMIN pode definir perfil SUPER_ADMIN.' });
+  }
+
+  db.get('SELECT * FROM usuarios WHERE id = ?', [id], (errBusca, usuario) => {
     if (errBusca) {
       return res.status(500).json({ error: 'Erro ao localizar usuário.' });
     }
@@ -257,13 +297,26 @@ router.put('/usuarios/:id', exigirAdmin, (req, res) => {
       return res.status(404).json({ error: 'Usuário não encontrado.' });
     }
 
+    // Impedir que um ADMIN altere um SUPER_ADMIN
+    if (usuario.perfil === 'SUPER_ADMIN' && perfilLogado !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Apenas SUPER_ADMIN pode alterar outro SUPER_ADMIN.' });
+    }
+
     const finalizar = () => {
       if (role === 'admin') {
-        return res.json({ message: 'Usuário atualizado como administrador.' });
+        return res.json({
+          message: 'Usuário atualizado com sucesso.',
+          perfil,
+          pode_alterar_senhas: podeAlterarSenhas
+        });
       }
 
       salvarPermissoes(id, permissoes, () => {
-        res.json({ message: 'Usuário atualizado com sucesso.' });
+        res.json({
+          message: 'Usuário atualizado com sucesso.',
+          perfil,
+          pode_alterar_senhas: podeAlterarSenhas
+        });
       });
     };
 
@@ -275,8 +328,8 @@ router.put('/usuarios/:id', exigirAdmin, (req, res) => {
       const hash = bcrypt.hashSync(password, 10);
 
       db.run(
-        `UPDATE usuarios SET role = ?, password_hash = ? WHERE id = ?`,
-        [role, hash, id],
+        `UPDATE usuarios SET role = ?, perfil = ?, pode_alterar_senhas = ?, password_hash = ? WHERE id = ?`,
+        [role, perfil, podeAlterarSenhas, hash, id],
         (errUpdate) => {
           if (errUpdate) {
             return res.status(500).json({ error: 'Erro ao atualizar usuário.' });
@@ -287,8 +340,8 @@ router.put('/usuarios/:id', exigirAdmin, (req, res) => {
       );
     } else {
       db.run(
-        `UPDATE usuarios SET role = ? WHERE id = ?`,
-        [role, id],
+        `UPDATE usuarios SET role = ?, perfil = ?, pode_alterar_senhas = ? WHERE id = ?`,
+        [role, perfil, podeAlterarSenhas, id],
         (errUpdate) => {
           if (errUpdate) {
             return res.status(500).json({ error: 'Erro ao atualizar usuário.' });
@@ -321,6 +374,119 @@ router.delete('/usuarios/:id', exigirAdmin, (req, res) => {
       }
 
       res.json({ message: 'Usuário desativado com sucesso.' });
+    }
+  );
+});
+
+// Rota para alterar senha com verificação de permissões de perfil
+router.post('/usuarios/alterar-senha', verificarToken, async (req, res) => {
+  const { usuarioAlvoId, novaSenha } = req.body;
+  const usuarioLogadoId = req.user?.id;
+
+  if (!usuarioAlvoId || !novaSenha) {
+    return res.status(400).json({ sucesso: false, mensagem: 'Dados incompletos.' });
+  }
+
+  if (novaSenha.length < 4) {
+    return res.status(400).json({ sucesso: false, mensagem: 'A senha deve ter pelo menos 4 caracteres.' });
+  }
+
+  try {
+    // Buscar dados do usuário logado
+    const logado = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM usuarios WHERE id = ?', [usuarioLogadoId], (err, row) => {
+        if (err) return reject(err);
+        resolve(row);
+      });
+    });
+
+    if (!logado) {
+      return res.status(401).json({ sucesso: false, mensagem: 'Usuário logado inválido.' });
+    }
+
+    // Buscar dados do usuário alvo
+    const alvo = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM usuarios WHERE id = ?', [usuarioAlvoId], (err, row) => {
+        if (err) return reject(err);
+        resolve(row);
+      });
+    });
+
+    if (!alvo) {
+      return res.status(404).json({ sucesso: false, mensagem: 'Usuário não encontrado.' });
+    }
+
+    // Verificar permissões
+    const perfilLogado = logado.perfil || 'USUARIO';
+    const perfilAlvo = alvo.perfil || 'USUARIO';
+    const podeAlterarSenhas = logado.pode_alterar_senhas === 1;
+
+    let podeAlterar = false;
+
+    if (perfilLogado === 'SUPER_ADMIN') {
+      // SUPER_ADMIN pode alterar qualquer usuário
+      podeAlterar = true;
+    } else if (perfilLogado === 'ADMIN' && podeAlterarSenhas) {
+      // ADMIN com permissão pode alterar USUARIO comum
+      if (perfilAlvo === 'USUARIO') {
+        podeAlterar = true;
+      }
+    }
+
+    // Usuário pode alterar sua própria senha
+    if (usuarioLogadoId === usuarioAlvoId) {
+      podeAlterar = true;
+    }
+
+    if (!podeAlterar) {
+      return res.status(403).json({
+        sucesso: false,
+        mensagem: 'Você não tem permissão para alterar esta senha.'
+      });
+    }
+
+    // Criptografar nova senha
+    const senhaHash = bcrypt.hashSync(novaSenha, 10);
+
+    // Atualizar senha
+    await new Promise((resolve, reject) => {
+      db.run('UPDATE usuarios SET password_hash = ? WHERE id = ?', [senhaHash, usuarioAlvoId], function(err) {
+        if (err) return reject(err);
+        resolve(this.changes);
+      });
+    });
+
+    res.json({ sucesso: true, mensagem: 'Senha alterada com sucesso.' });
+
+  } catch (error) {
+    console.error('Erro ao alterar senha:', error);
+    res.status(500).json({ sucesso: false, mensagem: 'Erro interno do servidor.' });
+  }
+});
+
+// Rota para obter perfil do usuário logado
+router.get('/meu-perfil', verificarToken, (req, res) => {
+  const usuarioId = req.user?.id;
+
+  db.get(
+    'SELECT id, username, nome, role, perfil, pode_alterar_senhas FROM usuarios WHERE id = ?',
+    [usuarioId],
+    (err, usuario) => {
+      if (err || !usuario) {
+        return res.status(404).json({ sucesso: false, mensagem: 'Usuário não encontrado.' });
+      }
+
+      res.json({
+        sucesso: true,
+        perfil: usuario.perfil || 'USUARIO',
+        podeAlterarSenhas: usuario.pode_alterar_senhas === 1,
+        usuario: {
+          id: usuario.id,
+          username: usuario.username,
+          nome: usuario.nome,
+          role: usuario.role
+        }
+      });
     }
   );
 });

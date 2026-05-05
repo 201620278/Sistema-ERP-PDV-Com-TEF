@@ -196,6 +196,9 @@ function createWindow(serverPort) {
     }
   });
 
+  // Tornar mainWindow global para acesso pela rota de impressão
+  global.mainWindow = mainWindow;
+
   // Interceptar window.open para criar comprovantes como janelas sempre no topo
   mainWindow.webContents.setWindowOpenHandler(() => {
     return {
@@ -243,7 +246,9 @@ function createWindow(serverPort) {
   });
 
   // IPC para abrir comprovante em nova janela que fica na frente
-  ipcMain.on('abrir-comprovante', (event, html) => {
+  ipcMain.on('abrir-comprovante', (event, html, options = {}) => {
+    const { silent = true, deviceName } = options;
+
     const cupomWindow = new BrowserWindow({
       width: 420,
       height: 720,
@@ -255,19 +260,98 @@ function createWindow(serverPort) {
       autoHideMenuBar: true,
       webPreferences: {
         nodeIntegration: false,
-        contextIsolation: true
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js')
       }
     });
-    cupomWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+    // Adicionar script para fechar com ESC
+    const htmlComEsc = html.replace('</body>', `
+      <script>
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            if (window.electronAPI?.fecharJanela) {
+              window.electronAPI.fecharJanela();
+            } else {
+              window.close();
+            }
+          }
+        });
+      </script>
+    </body>`);
+
+    cupomWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlComEsc)}`);
+
     cupomWindow.once('ready-to-show', () => {
       cupomWindow.show();
       cupomWindow.focus();
+
+      // Imprimir silenciosamente após renderizar
+      setTimeout(() => {
+        if (!cupomWindow.isDestroyed()) {
+          const printOptions = {
+            silent: true, // Sempre silencioso, sem diálogo
+            printBackground: true
+          };
+
+          if (deviceName) {
+            printOptions.deviceName = deviceName;
+          }
+
+          cupomWindow.webContents.print(printOptions, (success, errorType) => {
+            if (success) {
+              console.log('[IMPRESSAO] Cupom impresso com sucesso');
+            } else {
+              console.error('[IMPRESSAO] Falha:', errorType);
+              // Se falhar silenciosamente, tenta com diálogo como fallback
+              cupomWindow.webContents.print({ silent: false });
+            }
+          });
+        }
+      }, 1000); // Aguardar 1s para garantir renderização
     });
-    setTimeout(() => {
-      if (!cupomWindow.isDestroyed()) {
-        cupomWindow.webContents.print({ silent: false });
+  });
+
+  // IPC para imprimir DANFE silenciosamente (sem mostrar janela)
+  ipcMain.handle('imprimir-danfe-silencioso', async (event, html, deviceName) => {
+    const printWindow = new BrowserWindow({
+      width: 420,
+      height: 720,
+      show: false, // Janela invisível
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
       }
-    }, 800);
+    });
+
+    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+    // Aguardar renderização
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    const printOptions = {
+      silent: true,
+      printBackground: true
+    };
+
+    if (deviceName) {
+      printOptions.deviceName = deviceName;
+    }
+
+    return new Promise((resolve, reject) => {
+      printWindow.webContents.print(printOptions, (success, errorType) => {
+        // Fechar janela após impressão
+        if (!printWindow.isDestroyed()) {
+          printWindow.close();
+        }
+
+        if (success) {
+          resolve({ sucesso: true });
+        } else {
+          reject(new Error(`Falha na impressão: ${errorType}`));
+        }
+      });
+    });
   });
 
   // IPC para selecionar pasta de backup
@@ -280,6 +364,18 @@ function createWindow(serverPort) {
     if (result.canceled) return null;
 
     return result.filePaths[0];
+  });
+
+  // IPC para listar impressoras disponíveis
+  ipcMain.handle('listar-impressoras', async () => {
+    if (!mainWindow) return [];
+    const impressoras = await mainWindow.webContents.getPrintersAsync();
+    return impressoras.map(imp => ({
+      name: imp.name,
+      description: imp.description,
+      status: imp.status,
+      isDefault: imp.isDefault
+    }));
   });
 
   esperarServidor(`${baseUrl}/ping`)

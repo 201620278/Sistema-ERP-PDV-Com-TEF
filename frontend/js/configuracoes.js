@@ -125,15 +125,31 @@ function renderConfiguracoes(configuracoes, usuarios) {
                             <tr>
                                 <th>Usuário</th>
                                 <th>Perfil</th>
+                                <th>Permissões</th>
                                 <th>Cadastro</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${usuarios.map(u => `
+                            ${usuarios.map(u => {
+                                const perfil = u.perfil || 'USUARIO';
+                                let badgePerfil = 'bg-secondary';
+                                let labelPerfil = 'Usuário';
+                                if (perfil === 'SUPER_ADMIN') {
+                                    badgePerfil = 'bg-dark';
+                                    labelPerfil = 'SUPER ADMIN';
+                                } else if (perfil === 'ADMIN') {
+                                    badgePerfil = 'bg-danger';
+                                    labelPerfil = 'ADMIN';
+                                }
+                                return `
                                 <tr>
                                     <td>${escapeHtml(u.username)}</td>
-                                    <td><span class="badge bg-${u.role === 'admin' ? 'danger' : 'secondary'}">${u.role === 'admin' ? 'Administrador' : 'Operador'}</span></td>
+                                    <td><span class="badge ${badgePerfil}">${labelPerfil}</span></td>
+                                    <td>
+                                        ${u.pode_alterar_senhas ? '<span class="badge bg-info" title="Pode alterar senhas">🔑</span>' : ''}
+                                        ${u.role === 'admin' ? '<span class="badge bg-warning text-dark">Admin</span>' : '<span class="badge bg-light text-dark">Operador</span>'}
+                                    </td>
                                     <td>${u.created_at ? formatDateTime(u.created_at) : '-'}</td>
                                     <td>
                                         ${u.username !== JSON.parse(localStorage.getItem('user') || '{}').username ? `
@@ -146,7 +162,8 @@ function renderConfiguracoes(configuracoes, usuarios) {
                                         ` : '<span class="text-muted small">você</span>'}
                                     </td>
                                 </tr>
-                            `).join('')}
+                                `;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -189,13 +206,13 @@ function renderConfiguracoes(configuracoes, usuarios) {
             </div>
             <div class="card-body">
                 <div class="row align-items-center">
-                    <div class="col-md-6">
+                    <div class="col-md-8">
                         <label class="form-label fw-bold">Imagem de fundo da tela de login</label>
                         <input type="file" class="form-control form-control-sm" id="loginBackgroundUpload" accept="image/*">
                         <small class="text-muted">Recomendado: imagem 1920x1080px ou maior</small>
                         <input type="hidden" id="login_background_path" value="${escapeHtml(configuracoes.find(c => c.chave === 'login_background')?.valor || '')}">
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <div id="loginBackgroundPreview">
                             ${(() => {
                                 const value = configuracoes.find(c => c.chave === 'login_background')?.valor || '';
@@ -203,11 +220,32 @@ function renderConfiguracoes(configuracoes, usuarios) {
                                     ? `${API_URL.replace('/api', '')}${value}`
                                     : value;
                                 const previewImg = previewUrl
-                                    ? `<img src="${escapeHtml(previewUrl)}" alt="Fundo login atual" style="max-height: 100px; max-width: 200px; border: 1px solid #ddd; border-radius: 4px;" />`
-                                    : '<span class="text-muted small">Nenhuma imagem definida (usa gradiente padrão)</span>';
+                                    ? `<img src="${escapeHtml(previewUrl)}" alt="Fundo login atual" style="max-height: 60px; max-width: 120px; border: 1px solid #ddd; border-radius: 4px;" />`
+                                    : '<span class="text-muted small">Nenhuma imagem definida</span>';
                                 return previewImg;
                             })()}
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="fas fa-print"></i> Impressão
+            </div>
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <label class="form-label fw-bold">Impressora de Cupom Fiscal</label>
+                        <div id="impressoraAtual" class="text-muted small mb-2">
+                            <i class="fas fa-spinner fa-spin"></i> Carregando...
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-info" onclick="configurarImpressoraCupom()">
+                            <i class="fas fa-cog"></i> Configurar
+                        </button>
                     </div>
                 </div>
             </div>
@@ -257,6 +295,7 @@ function renderConfiguracoes(configuracoes, usuarios) {
     setupBackupManualListener();
     carregarPastaBackup();
     setupEscolherPastaListener();
+    carregarImpressoraCupom();
 }
 
 function escapeHtml(s) {
@@ -317,11 +356,40 @@ function showModalNovoUsuario(usuario = null) {
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">Perfil</label>
+                            <label class="form-label">Tipo de Acesso (role)</label>
                             <select class="form-control" id="novo_usuario_role" onchange="togglePermissoesUsuario()">
                                 <option value="operador" ${usuario?.role === 'operador' ? 'selected' : ''}>Operador</option>
                                 <option value="admin" ${usuario?.role === 'admin' ? 'selected' : ''}>Administrador</option>
                             </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Perfil de Permissão</label>
+                            <select class="form-control" id="novo_usuario_perfil">
+                                <option value="USUARIO" ${(usuario?.perfil || 'USUARIO') === 'USUARIO' ? 'selected' : ''}>Usuário Comum</option>
+                                <option value="ADMIN" ${usuario?.perfil === 'ADMIN' ? 'selected' : ''}>Administrador (ADMIN)</option>
+                                <option value="SUPER_ADMIN" ${usuario?.perfil === 'SUPER_ADMIN' ? 'selected' : ''}>Super Administrador</option>
+                            </select>
+                            <small class="text-muted">
+                                SUPER_ADMIN: pode tudo | ADMIN: pode gerenciar usuários comuns | USUARIO: acesso limitado
+                            </small>
+                        </div>
+
+                        <div class="mb-3" id="boxPodeAlterarSenhas">
+                            <label class="form-check">
+                                <input 
+                                    type="checkbox" 
+                                    class="form-check-input" 
+                                    id="novo_usuario_pode_alterar_senhas"
+                                    ${usuario?.pode_alterar_senhas ? 'checked' : ''}
+                                >
+                                <span class="form-check-label">
+                                    Pode alterar senhas de outros usuários
+                                </span>
+                            </label>
+                            <small class="text-muted d-block">
+                                Apenas ADMINs com esta permissão podem alterar senhas de USUARIOs comuns
+                            </small>
                         </div>
 
                         <div id="boxPermissoesUsuario">
@@ -373,6 +441,8 @@ function salvarNovoUsuario() {
     const username = $('#novo_usuario_login').val().trim();
     const password = $('#novo_usuario_senha').val();
     const role = $('#novo_usuario_role').val();
+    const perfil = $('#novo_usuario_perfil').val();
+    const podeAlterarSenhas = $('#novo_usuario_pode_alterar_senhas').is(':checked') ? 1 : 0;
 
     const permissoes = $('.permissao-usuario:checked')
         .map(function () {
@@ -392,6 +462,8 @@ function salvarNovoUsuario() {
         username,
         password,
         role,
+        perfil,
+        pode_alterar_senhas: podeAlterarSenhas,
         permissoes
     };
 
@@ -861,4 +933,203 @@ function setupEscolherPastaListener() {
             showNotification('Erro ao salvar pasta de backup', 'danger');
         }
     });
+}
+
+// Função para carregar impressora configurada
+async function carregarImpressoraCupom() {
+    try {
+        const resp = await fetch(`${API_URL}/configuracoes/impressora_cupom`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+
+        const data = await resp.json();
+        const impressoraDiv = document.getElementById('impressoraAtual');
+
+        if (data.sucesso && data.caminho) {
+            impressoraDiv.innerHTML = `<i class="fas fa-print"></i> ${escapeHtml(data.caminho)}`;
+        } else {
+            impressoraDiv.innerHTML = `<i class="fas fa-exclamation-triangle text-warning"></i> Nenhuma impressora configurada (será detectada automaticamente)`;
+        }
+    } catch (error) {
+        console.error('Erro ao carregar impressora:', error);
+        document.getElementById('impressoraAtual').innerHTML = `<i class="fas fa-exclamation-circle text-danger"></i> Erro ao carregar`;
+    }
+}
+
+// Função para configurar impressora de cupom
+async function configurarImpressoraCupom() {
+    try {
+        let impressoraSelecionada = null;
+
+        // No Electron, listar impressoras disponíveis
+        if (window.electronAPI && window.electronAPI.listarImpressoras) {
+            try {
+                const impressoras = await window.electronAPI.listarImpressoras();
+
+                if (impressoras.length === 0) {
+                    showNotification('Nenhuma impressora encontrada no sistema', 'warning');
+                    return;
+                }
+
+                // Criar modal customizado
+                const modalId = 'modalImpressoraCupom';
+
+                // Remover modal anterior se existir
+                const modalExistente = document.getElementById(modalId);
+                if (modalExistente) modalExistente.remove();
+
+                // Construir opções do select
+                const opcoesHtml = impressoras.map(imp => {
+                    const destaque = imp.name.toLowerCase().includes('cupom') ? ' ⭐' : '';
+                    const padrao = imp.isDefault ? ' (padrão)' : '';
+                    return `<option value="${escapeHtml(imp.name)}">${escapeHtml(imp.name)}${destaque}${padrao}</option>`;
+                }).join('');
+
+                const html = `
+                    <div id="${modalId}" style="
+                        position: fixed;
+                        inset: 0;
+                        background: rgba(0,0,0,.5);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        z-index: 99999;
+                    ">
+                        <div style="
+                            background: #fff;
+                            padding: 25px;
+                            border-radius: 8px;
+                            width: 450px;
+                            max-width: 90%;
+                            box-shadow: 0 10px 30px rgba(0,0,0,.25);
+                        ">
+                            <h5 style="margin-top:0; margin-bottom:20px;">
+                                <i class="fas fa-print"></i> Configurar impressora de cupom
+                            </h5>
+
+                            <div class="mb-3">
+                                <label class="form-label">Selecione a impressora:</label>
+                                <select id="selectImpressoraCupom" class="form-select">
+                                    <option value="">-- Automático (detectar) --</option>
+                                    ${opcoesHtml}
+                                </select>
+                                <small class="text-muted">⭐ = impressora de cupom detectada</small>
+                            </div>
+
+                            <div class="d-flex gap-2 justify-content-end">
+                                <button type="button" class="btn btn-secondary" id="btnCancelarImpressora">
+                                    Cancelar
+                                </button>
+                                <button type="button" class="btn btn-primary" id="btnSalvarImpressora">
+                                    <i class="fas fa-save"></i> Salvar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                document.body.insertAdjacentHTML('beforeend', html);
+
+                // Evento cancelar
+                document.getElementById('btnCancelarImpressora').onclick = () => {
+                    document.getElementById(modalId).remove();
+                };
+
+                // Evento salvar
+                document.getElementById('btnSalvarImpressora').onclick = async () => {
+                    const impressora = document.getElementById('selectImpressoraCupom').value;
+
+                    try {
+                        const resp = await fetch(`${API_URL}/configuracoes/impressora_cupom`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ caminho: impressora })
+                        });
+
+                        const data = await resp.json();
+
+                        if (data.sucesso) {
+                            showNotification('Impressora configurada com sucesso!', 'success');
+                            document.getElementById(modalId).remove();
+                            carregarImpressoraCupom();
+                        } else {
+                            showNotification(data.mensagem || 'Erro ao configurar impressora', 'danger');
+                        }
+                    } catch (err) {
+                        showNotification('Erro ao salvar impressora', 'danger');
+                    }
+                };
+
+                // Fechar ao clicar fora
+                document.getElementById(modalId).onclick = (e) => {
+                    if (e.target.id === modalId) {
+                        document.getElementById(modalId).remove();
+                    }
+                };
+
+            } catch (err) {
+                console.error('Erro ao listar impressoras:', err);
+                showNotification('Erro ao listar impressoras: ' + err.message, 'danger');
+            }
+        } else {
+            // Fallback: usar prompt no navegador ou input simples
+            const impressora = prompt('Digite o nome exato da impressora de cupom (deixe em branco para automático):');
+
+            if (impressora === null) return; // Cancelado
+
+            try {
+                const resp = await fetch(`${API_URL}/configuracoes/impressora_cupom`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ caminho: impressora || '' })
+                });
+
+                const data = await resp.json();
+
+                if (data.sucesso) {
+                    showNotification('Impressora configurada com sucesso!', 'success');
+                    carregarImpressoraCupom();
+                } else {
+                    showNotification(data.mensagem || 'Erro ao configurar impressora', 'danger');
+                }
+            } catch (err) {
+                showNotification('Erro ao salvar impressora', 'danger');
+            }
+        }
+    } catch (error) {
+        showNotification('Erro ao configurar impressora', 'danger');
+        console.error(error);
+    }
+}
+
+// Função para imprimir cupom
+async function imprimirCupom() {
+    try {
+        const res = await fetch(`${API_URL}/impressao/imprimir`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+
+        const data = await res.json();
+
+        if (!data.sucesso) {
+            throw new Error(data.mensagem || "Erro ao imprimir");
+        }
+
+        showNotification(`Impressão OK: ${data.impressora}`, 'success');
+        console.log("Impressão OK:", data.impressora);
+    } catch (err) {
+        showNotification('Erro na impressão: ' + err.message, 'danger');
+        console.error('Erro na impressão:', err);
+    }
 }
