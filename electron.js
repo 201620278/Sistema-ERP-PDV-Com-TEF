@@ -4,6 +4,15 @@ const fs = require('fs');
 const http = require('http');
 const net = require('net');
 
+// Configuração do banco de dados
+process.env.DB_DIR = process.env.DB_DIR || path.join(
+  process.env.PROGRAMDATA || 'C:\\ProgramData',
+  'MercantilFiscal',
+  'dados'
+);
+
+console.log('DB_DIR definido para:', process.env.DB_DIR);
+
 // 🔥 CORREÇÃO DEFINITIVA GPU - Resolve travamentos no Windows
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
@@ -15,33 +24,6 @@ let mainWindow;
 function obterPortaServidor() {
   const porta = Number.parseInt(process.env.PORT, 10);
   return Number.isFinite(porta) && porta > 0 ? porta : 3001;
-}
-
-function garantirDiretorioBanco() {
-  const dbDir = 'C:\\projetos\\MercantilFiscal\\dados';
-
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-  }
-
-  process.env.DB_DIR = dbDir;
-  console.log('DB_DIR definido para:', process.env.DB_DIR);
-
-  const fiscalDir = path.join(dbDir, 'fiscal');
-
-  if (!fs.existsSync(fiscalDir)) {
-    fs.mkdirSync(fiscalDir, { recursive: true });
-  }
-
-  ['xml', 'danfe', 'debug', 'certificados'].forEach(sub => {
-    const dir = path.join(fiscalDir, sub);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-  });
-
-  process.env.FISCAL_DIR = fiscalDir;
-  console.log('FISCAL_DIR definido para:', process.env.FISCAL_DIR);
 }
 
 function esperarServidor(url, timeout = 15000) {
@@ -309,7 +291,25 @@ function createWindow(serverPort) {
 
 app.whenReady().then(() => {
   try {
-    garantirDiretorioBanco();
+    // Garante que os diretórios existam
+    if (!fs.existsSync(process.env.DB_DIR)) {
+      fs.mkdirSync(process.env.DB_DIR, { recursive: true });
+    }
+    
+    const fiscalDir = path.join(process.env.DB_DIR, 'fiscal');
+    if (!fs.existsSync(fiscalDir)) {
+      fs.mkdirSync(fiscalDir, { recursive: true });
+    }
+    
+    ['xml', 'danfe', 'debug', 'certificados'].forEach(sub => {
+      const dir = path.join(fiscalDir, sub);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    });
+    
+    process.env.FISCAL_DIR = fiscalDir;
+    console.log('FISCAL_DIR definido para:', process.env.FISCAL_DIR);
 
     const portaPreferida = obterPortaServidor();
     encontrarPortaDisponivel(portaPreferida)

@@ -3,48 +3,33 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
 
-// ================================
-// RESOLUÇÃO DO CAMINHO DO BANCO
-// ================================
+// BANCO OFICIAL DEFINITIVO
+// Prioridade 1: variável DB_DIR
+// Prioridade 2: pasta padrão profissional do Windows
+const DB_DIR = process.env.DB_DIR || path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'MercantilFiscal', 'dados');
 
-// 1. Se vier do Electron, usa a variável de ambiente DB_DIR
-// 2. Se não vier, continua usando a pasta local do projeto (modo desenvolvimento)
-
-const defaultDbDir = path.resolve(__dirname, '..', 'dados');
-
-function obterDiretorioBanco() {
-  const dbDirFromEnv = process.env.DB_DIR;
-
-  if (dbDirFromEnv && dbDirFromEnv.trim() !== '') {
-    return dbDirFromEnv;
-  }
-
-  // Caminho oficial do banco: pasta dados no diretório raiz do projeto
-  return defaultDbDir;
+if (!fs.existsSync(DB_DIR)) {
+  fs.mkdirSync(DB_DIR, { recursive: true });
 }
 
-const dbDir = obterDiretorioBanco();
-const dbPath = path.join(dbDir, 'mercadao.db');
+const DB_PATH = path.join(DB_DIR, 'mercadao.db');
 
-// Garante que a pasta exista
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-  console.log('Pasta do banco criada em:', dbDir);
-}
+console.log('======================================');
+console.log('BANCO OFICIAL EM USO:');
+console.log(DB_PATH);
+console.log('======================================');
 
-console.log('Banco SQLite em uso:', dbPath);
-
-const db = new sqlite3.Database(dbPath, (err) => {
+const db = new sqlite3.Database(DB_PATH, (err) => {
   if (err) {
-    console.error('Erro ao conectar ao banco de dados:', err);
+    console.error('Erro ao conectar ao banco:', err.message);
   } else {
     console.log('Conectado ao banco de dados SQLite');
     inicializarBanco();
   }
 });
 
-db.dbDir = dbDir;
-db.dbPath = dbPath;
+db.dbDir = DB_DIR;
+db.dbPath = DB_PATH;
 
 function aplicarAlteracaoSegura(tabela, sql) {
   db.run(sql, (err) => {

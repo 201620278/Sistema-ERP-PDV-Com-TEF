@@ -1,28 +1,17 @@
 const db = require('./backend/database');
 
-db.get(`
-  SELECT MAX(CAST(numero AS INTEGER)) AS maior_numero
-  FROM nfce_notas
-`, [], (err, row) => {
-  if (err) {
-    console.error(err.message);
-    process.exit(1);
-  }
+const PROXIMO_NUMERO = 100;
 
-  const maior = Number(row?.maior_numero || 0);
-  const proximo = maior + 1;
-
-  db.run(`
-    UPDATE configuracoes
-    SET valor = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE chave = 'fiscal_numero_atual'
-  `, [String(proximo)], (updateErr) => {
-    if (updateErr) {
-      console.error(updateErr.message);
+db.run(
+  "UPDATE configuracoes SET valor = ?, updated_at = CURRENT_TIMESTAMP WHERE chave = 'fiscal_numero_atual'",
+  [String(PROXIMO_NUMERO)],
+  function (err) {
+    if (err) {
+      console.error('Erro:', err.message);
       process.exit(1);
     }
 
-    console.log(`Número NFC-e corrigido. Próximo número será: ${proximo}`);
+    console.log(`✔ fiscal_numero_atual ajustado para ${PROXIMO_NUMERO}`);
     process.exit(0);
-  });
-});
+  }
+);

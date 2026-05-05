@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('../../database');
-const { getFiscalConfig, incrementaNumeroFiscal } = require('./configService');
+const { getFiscalConfig, incrementaNumeroFiscal, setConfiguracao } = require('./configService');
 const { carregarCertificadoPfx } = require('./certificateService');
 const {
   buildNfceXml,
@@ -117,6 +117,8 @@ async function emitirPorVendaId(vendaId) {
 
   const config = await getFiscalConfig();
   const numero = await incrementaNumeroFiscal();
+
+  console.log(`NÚMERO FISCAL GERADO: ${numero} (MAX no banco + 1)`);
 
   if (!config.nomeEmpresa || !config.cnpj || !config.ie) {
     const notaId = await salvarNota({
@@ -292,7 +294,17 @@ async function emitirPorVendaId(vendaId) {
     } else if (raw.includes('<cStat>539</cStat>')) {
       status = 'rejeitada_duplicidade';
 
-      console.warn('NFC-e rejeitada por duplicidade. O próximo número fiscal será corrigido automaticamente.');
+      const match = raw.match(/\[chNFe:(\d{44})\]/);
+
+      if (match) {
+        const chave = match[1];
+        const numeroDuplicado = Number(chave.substring(25, 34));
+        const proximo = numeroDuplicado + 1;
+
+        await setConfiguracao('fiscal_numero_atual', String(proximo));
+
+        console.warn(`Corrigido automaticamente para número ${proximo}`);
+      }
     } else if (raw.includes('<cStat>') || /rejeic/i.test(raw)) {
       status = 'rejeitada';
     } else {

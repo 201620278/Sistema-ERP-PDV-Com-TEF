@@ -163,29 +163,34 @@ async function incrementaNumeroFiscal() {
 
   return new Promise((resolve, reject) => {
     db.get(`
-      SELECT MAX(CAST(numero AS INTEGER)) AS maior_numero
+      SELECT MAX(CAST(numero AS INTEGER)) AS maior
       FROM nfce_notas
       WHERE CAST(serie AS INTEGER) = ?
         AND CAST(ambiente AS INTEGER) = ?
     `, [serie, ambiente], async (err, row) => {
       if (err) return reject(err);
 
-      const maiorBanco = Number(row?.maior_numero || 0);
+      const maiorBanco = Number(row?.maior || 0);
 
-      // Usa sempre o maior entre configuração e banco
-      const numeroSeguro = Math.max(numeroConfig, maiorBanco + 1);
+      const numeroSeguro = Math.max(
+        numeroConfig,
+        maiorBanco + 1
+      );
 
       try {
         await setConfiguracao(
           'fiscal_numero_atual',
           String(numeroSeguro + 1),
           'number',
-          'Próximo número da NFC-e'
+          'Próximo número NFC-e'
         );
 
+        console.log(`[FISCAL] Número usado: ${numeroSeguro}`);
+        console.log(`[FISCAL] Próximo número salvo: ${numeroSeguro + 1}`);
+
         resolve(numeroSeguro);
-      } catch (error) {
-        reject(error);
+      } catch (e) {
+        reject(e);
       }
     });
   });
