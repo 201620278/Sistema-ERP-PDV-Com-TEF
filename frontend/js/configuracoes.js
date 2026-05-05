@@ -99,8 +99,7 @@ function renderConfiguracoes(configuracoes, usuarios) {
         'complemento',
         'bairro',
         'cidade',
-        'uf',
-        'login_background'
+        'uf'
     ];
 
     configuracoes.sort((a, b) => {
@@ -166,7 +165,7 @@ function renderConfiguracoes(configuracoes, usuarios) {
             <div class="card-body">
                 <form id="configForm">
                     <div class="row">
-                        ${configuracoes.map(config => `
+                        ${configuracoes.filter(config => config.chave !== 'login_background').map(config => `
                             <div class="col-md-6 mb-3">
                                 <label for="${config.chave}" class="form-label fw-bold">
                                     ${config.descricao || config.chave}
@@ -183,23 +182,59 @@ function renderConfiguracoes(configuracoes, usuarios) {
             </div>
         </div>
 
+        <!-- Campo de imagem de fundo do login (após configurações fiscais) -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="fas fa-image"></i> Personalização da Tela de Login
+            </div>
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Imagem de fundo da tela de login</label>
+                        <input type="file" class="form-control form-control-sm" id="loginBackgroundUpload" accept="image/*">
+                        <small class="text-muted">Recomendado: imagem 1920x1080px ou maior</small>
+                        <input type="hidden" id="login_background_path" value="${escapeHtml(configuracoes.find(c => c.chave === 'login_background')?.valor || '')}">
+                    </div>
+                    <div class="col-md-6">
+                        <div id="loginBackgroundPreview">
+                            ${(() => {
+                                const value = configuracoes.find(c => c.chave === 'login_background')?.valor || '';
+                                const previewUrl = value && value.startsWith('/')
+                                    ? `${API_URL.replace('/api', '')}${value}`
+                                    : value;
+                                const previewImg = previewUrl
+                                    ? `<img src="${escapeHtml(previewUrl)}" alt="Fundo login atual" style="max-height: 100px; max-width: 200px; border: 1px solid #ddd; border-radius: 4px;" />`
+                                    : '<span class="text-muted small">Nenhuma imagem definida (usa gradiente padrão)</span>';
+                                return previewImg;
+                            })()}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="card mt-3">
             <div class="card-header">
                 <i class="fas fa-database"></i> Backup e Manutenção
             </div>
             <div class="card-body">
-                <button class="btn btn-info" onclick="fazerBackup()">
-                    <i class="fas fa-download"></i> Fazer Backup
-                </button>
-                <button class="btn btn-secondary ms-2" onclick="showBackupConfigModal()">
+                <button class="btn btn-secondary" onclick="showBackupConfigModal()">
                     <i class="fas fa-cloud-upload-alt"></i> Configurar Backup Google Drive
+                </button>
+                <button class="btn btn-outline-primary ms-2" onclick="backupManual()">
+                    <i class="fas fa-play"></i> Backup Google Agora
+                </button>
+                <button id="btnBackupManual" class="btn btn-success ms-2">
+                    <i class="fas fa-database"></i> Backup Manual DB
+                </button>
+                <button id="btnEscolherPasta" class="btn btn-info ms-2">
+                    <i class="fas fa-folder-open"></i> Escolher Pasta
                 </button>
                 <button class="btn btn-warning ms-2" onclick="limparCache()">
                     <i class="fas fa-trash"></i> Limpar Cache
                 </button>
-                <button class="btn btn-outline-primary ms-2" onclick="backupManual()">
-                    <i class="fas fa-play"></i> Backup Manual Agora
-                </button>
+                <div id="pastaAtual" class="mt-2 text-muted small"></div>
+                <div id="resultadoBackup" class="mt-2"></div>
             </div>
         </div>
         
@@ -217,6 +252,11 @@ function renderConfiguracoes(configuracoes, usuarios) {
     `;
     
     $('#page-content').html(html);
+
+    // Configurar event listeners
+    setupBackupManualListener();
+    carregarPastaBackup();
+    setupEscolherPastaListener();
 }
 
 function escapeHtml(s) {
@@ -711,4 +751,114 @@ function formatCNPJInput(input) {
         value = value.replace(/(\d{4})(\d)/, '$1-$2');
         input.value = value;
     }
+}
+
+// Configurar event listener do botão de backup manual
+function setupBackupManualListener() {
+    document.getElementById("btnBackupManual")?.addEventListener("click", async () => {
+        const resultadoBackup = document.getElementById("resultadoBackup");
+
+        try {
+            resultadoBackup.innerHTML = "Fazendo backup...";
+
+            const resposta = await fetch(`${API_URL}/backup/manual`, {
+                method: "POST",
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+
+            const dados = await resposta.json();
+
+            if (!dados.sucesso) {
+                throw new Error(dados.mensagem || "Erro ao fazer backup.");
+            }
+
+            resultadoBackup.innerHTML = `
+                <div style="color: green;">
+                    ✅ Backup realizado com sucesso!<br>
+                    Arquivo: ${dados.backup.arquivo}<br>
+                    Local: ${dados.backup.caminho}
+                </div>
+            `;
+            showNotification('Backup realizado com sucesso!', 'success');
+        } catch (error) {
+            resultadoBackup.innerHTML = `
+                <div style="color: red;">
+                    ❌ Erro ao fazer backup: ${error.message}
+                </div>
+            `;
+        }
+    });
+}
+
+// Carregar pasta de backup atual
+async function carregarPastaBackup() {
+    try {
+        const resp = await fetch(`${API_URL}/configuracoes/backup-path`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+
+        const data = await resp.json();
+        const pastaDiv = document.getElementById('pastaAtual');
+
+        if (data.sucesso && data.caminho) {
+            pastaDiv.innerHTML = `<i class="fas fa-folder"></i> Pasta atual: ${escapeHtml(data.caminho)}`;
+        } else {
+            pastaDiv.innerHTML = `<i class="fas fa-exclamation-triangle text-warning"></i> Nenhuma pasta de backup configurada`;
+        }
+    } catch (error) {
+        console.error('Erro ao carregar pasta de backup:', error);
+    }
+}
+
+// Configurar listener do botão para escolher pasta
+function setupEscolherPastaListener() {
+    document.getElementById("btnEscolherPasta")?.addEventListener("click", async () => {
+        let pastaSelecionada = null;
+
+        // Verificar se está rodando em Electron
+        if (window.electronAPI && window.electronAPI.selecionarPastaBackup) {
+            pastaSelecionada = await window.electronAPI.selecionarPastaBackup();
+        } else {
+            // Fallback para prompt em navegador web
+            pastaSelecionada = prompt("Digite o caminho da pasta de backup (ex: C:\\CDS-Sistemas\\Backups):");
+
+            if (pastaSelecionada) {
+                pastaSelecionada = pastaSelecionada.trim();
+                if (!pastaSelecionada) {
+                    showNotification('Caminho inválido', 'danger');
+                    return;
+                }
+            }
+        }
+
+        if (!pastaSelecionada) {
+            return; // Usuário cancelou
+        }
+
+        try {
+            const resp = await fetch(`${API_URL}/configuracoes/backup-path`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ caminho: pastaSelecionada })
+            });
+
+            const data = await resp.json();
+
+            if (data.sucesso) {
+                showNotification('Pasta de backup salva com sucesso!', 'success');
+                carregarPastaBackup();
+            } else {
+                showNotification(data.mensagem || 'Erro ao salvar pasta', 'danger');
+            }
+        } catch (error) {
+            showNotification('Erro ao salvar pasta de backup', 'danger');
+        }
+    });
 }

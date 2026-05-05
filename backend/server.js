@@ -101,6 +101,7 @@ const fiscalRoutes = require('./rotas/fiscal');
 const fornecedoresRoutes = require('./rotas/fornecedores');
 const impressaoRoutes = require('./rotas/impressao');
 const caixaRoutes = require('./rotas/caixa');
+const backupRoutes = require('./rotas/backup');
 
 app.use('/api/produtos', verificarToken, produtosRoutes);
 app.use('/api/clientes', verificarToken, clientesRoutes);
@@ -114,6 +115,7 @@ app.use('/api/fiscal', verificarToken, fiscalRoutes);
 app.use('/api/fornecedores', verificarToken, fornecedoresRoutes);
 app.use('/api/impressao', verificarToken, impressaoRoutes);
 app.use('/api/caixa', verificarToken, caixaRoutes);
+app.use('/api/backup', verificarToken, backupRoutes);
 
 // Rota principal (protegida)
 app.get('/', verificarToken, (req, res) => {

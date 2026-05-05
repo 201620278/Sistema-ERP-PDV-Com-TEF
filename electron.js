@@ -270,6 +270,18 @@ function createWindow(serverPort) {
     }, 800);
   });
 
+  // IPC para selecionar pasta de backup
+  ipcMain.handle('selecionar-pasta-backup', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Selecione a pasta de backup'
+    });
+
+    if (result.canceled) return null;
+
+    return result.filePaths[0];
+  });
+
   esperarServidor(`${baseUrl}/ping`)
     .then(() => {
       return carregarJanelaComRobustez(mainWindow, `${baseUrl}/login`);

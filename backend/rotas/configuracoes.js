@@ -186,6 +186,49 @@ router.post('/backup/manual', async (req, res) => {
   }
 });
 
+// salvar pasta backup
+router.post('/backup-path', (req, res) => {
+  const { caminho } = req.body;
+
+  if (!caminho) {
+    return res.status(400).json({ sucesso: false, mensagem: 'Caminho inválido' });
+  }
+
+  const query = `
+    INSERT INTO configuracoes (chave, valor, tipo, descricao)
+    VALUES ('backup_path', ?, 'text', 'Caminho da pasta de backup manual')
+    ON CONFLICT(chave) DO UPDATE SET
+      valor = excluded.valor,
+      updated_at = datetime('now', 'localtime')
+  `;
+
+  db.run(query, [caminho], function (err) {
+    if (err) {
+      return res.status(500).json({ sucesso: false, erro: err.message });
+    }
+
+    res.json({ sucesso: true, mensagem: 'Pasta de backup salva!' });
+  });
+});
+
+// buscar pasta backup
+router.get('/backup-path', (req, res) => {
+  db.get(
+    "SELECT valor FROM configuracoes WHERE chave = 'backup_path'",
+    [],
+    (err, row) => {
+      if (err) {
+        return res.status(500).json({ sucesso: false });
+      }
+
+      res.json({
+        sucesso: true,
+        caminho: row?.valor || null
+      });
+    }
+  );
+});
+
 router.get('/', (req, res) => {
   db.all('SELECT * FROM configuracoes ORDER BY chave', (err, rows) => {
     if (err) {
