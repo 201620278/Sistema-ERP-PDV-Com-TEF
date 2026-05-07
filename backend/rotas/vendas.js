@@ -221,7 +221,8 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
     forcar,
     emitir_fiscal,
     valor_recebido,
-    cpf_cnpj_nota
+    cpf_cnpj_nota,
+    pagamentos
   } = req.body;
 
   const cpfCnpjNotaLimpo = String(cpf_cnpj_nota || '').replace(/\D/g, '');
@@ -230,6 +231,26 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
     return res.status(400).json({
       error: 'CPF/CNPJ informado na nota é inválido.'
     });
+  }
+
+  const pagamentosVenda = Array.isArray(pagamentos) ? pagamentos : [];
+
+  let formaPagamentoFinal = forma_pagamento;
+
+  if (pagamentosVenda.length > 1) {
+    formaPagamentoFinal = "misto";
+  }
+
+  if (pagamentosVenda.length > 0) {
+    const totalPagamentos = pagamentosVenda.reduce((soma, p) => {
+      return soma + Number(p.valor || 0);
+    }, 0);
+
+    if (Math.abs(totalPagamentos - Number(total || 0)) > 0.01) {
+      return res.status(400).json({
+        error: "A soma dos pagamentos precisa ser igual ao total da venda."
+      });
+    }
   }
   const totalNum = Number(total);
   const formasPendentes = ['prazo'];
@@ -348,7 +369,7 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
         db.run(`
           INSERT INTO vendas (codigo, data_venda, cliente_id, total, desconto, forma_pagamento, status, caixa_id)
           VALUES (?, ?, ?, ?, ?, ?, 'concluida', ?)
-        `, [codigo, data_venda, cliente_id, totalNum, desconto || 0, forma_pagamento, req.caixaId], function(err) {
+        `, [codigo, data_venda, cliente_id, totalNum, desconto || 0, formaPagamentoFinal, req.caixaId], function(err) {
           if (err) {
             db.run('ROLLBACK');
             res.status(500).json({ error: err.message });
@@ -378,6 +399,31 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
                 }
                 itensProcessados++;
                 if (itensProcessados === itens.length) {
+                  if (pagamentosVenda.length > 0) {
+                    const stmtPagamentos = db.prepare(`
+                      INSERT INTO venda_pagamentos (venda_id, forma_pagamento, valor)
+                      VALUES (?, ?, ?)
+                    `);
+
+                    pagamentosVenda.forEach((p) => {
+                      stmtPagamentos.run(
+                        vendaId,
+                        p.forma_pagamento,
+                        Number(p.valor || 0)
+                      );
+                    });
+
+                    stmtPagamentos.finalize();
+                  } else {
+                    db.run(
+                      `
+                      INSERT INTO venda_pagamentos (venda_id, forma_pagamento, valor)
+                      VALUES (?, ?, ?)
+                      `,
+                      [vendaId, formaPagamentoFinal, Number(total || 0)]
+                    );
+                  }
+
                   // Gerar parcelas
                   const qtdParcelas = Number(parcelas) || 1;
                   const valorParcela = Math.round((totalNum / qtdParcelas) * 100) / 100;
@@ -475,7 +521,7 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
         cliente_id || null,
         totalNum,
         desconto || 0,
-        forma_pagamento,
+        formaPagamentoFinal,
         valor_recebido || null,
         req.caixaId,
         emitir_fiscal ? cpfCnpjNotaLimpo || null : null
@@ -509,6 +555,31 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
               }
               itensProcessados++;
               if (itensProcessados === itens.length) {
+                if (pagamentosVenda.length > 0) {
+                  const stmtPagamentos = db.prepare(`
+                    INSERT INTO venda_pagamentos (venda_id, forma_pagamento, valor)
+                    VALUES (?, ?, ?)
+                  `);
+
+                  pagamentosVenda.forEach((p) => {
+                    stmtPagamentos.run(
+                      vendaId,
+                      p.forma_pagamento,
+                      Number(p.valor || 0)
+                    );
+                  });
+
+                  stmtPagamentos.finalize();
+                } else {
+                  db.run(
+                    `
+                    INSERT INTO venda_pagamentos (venda_id, forma_pagamento, valor)
+                    VALUES (?, ?, ?)
+                    `,
+                    [vendaId, formaPagamentoFinal, Number(total || 0)]
+                  );
+                }
+
                 const statusFinanceiro = vendaFicaPendente ? 'pendente' : 'recebido';
                 const baixadoEm = statusFinanceiro === 'recebido' ? data_venda : null;
                 const finalizarResposta = () => {

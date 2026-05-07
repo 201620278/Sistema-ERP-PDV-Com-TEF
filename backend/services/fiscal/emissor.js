@@ -51,7 +51,16 @@ function carregarVenda(vendaId) {
         ORDER BY vi.id
       `, [vendaId], (itErr, itens) => {
         if (itErr) return reject(itErr);
-        resolve({ venda, itens });
+
+        db.all(
+          "SELECT forma_pagamento, valor FROM venda_pagamentos WHERE venda_id = ?",
+          [vendaId],
+          (pgErr, pagamentos) => {
+            if (pgErr) return reject(pgErr);
+            venda.pagamentos = pagamentos || [];
+            resolve({ venda, itens });
+          }
+        );
       });
     });
   });

@@ -374,6 +374,21 @@ function criarTabelas() {
       else console.log('Tabela vendas_itens criada/verificada');
     });
 
+    // Tabela de pagamentos de venda (para pagamento misto)
+    db.run(`
+      CREATE TABLE IF NOT EXISTS venda_pagamentos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        venda_id INTEGER NOT NULL,
+        forma_pagamento TEXT NOT NULL,
+        valor DECIMAL(10,2) NOT NULL,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (venda_id) REFERENCES vendas(id)
+      )
+    `, (err) => {
+      if (err) console.error('Erro ao criar tabela venda_pagamentos:', err);
+      else console.log('Tabela venda_pagamentos criada/verificada');
+    });
+
     // Tabela de movimentações financeiras
     db.run(`
       CREATE TABLE IF NOT EXISTS financeiro (

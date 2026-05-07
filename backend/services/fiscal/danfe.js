@@ -1,5 +1,32 @@
 const QRCode = require('qrcode');
 
+function montarPagamentosDanfe(pagamentos) {
+  if (!Array.isArray(pagamentos) || pagamentos.length === 0) {
+    return '';
+  }
+
+  return pagamentos.map(p => {
+    return `${formatarFormaPagamento(p.forma_pagamento)}: ${formatarMoeda(p.valor)}`;
+  }).join('\n');
+}
+
+function formatarFormaPagamento(forma) {
+  const nomes = {
+    dinheiro: 'Dinheiro',
+    pix: 'Pix',
+    cartao: 'Cartão',
+    cartao_debito: 'Cartão Débito',
+    cartao_credito: 'Cartão Crédito',
+    misto: 'Misto'
+  };
+
+  return nomes[forma] || forma;
+}
+
+function formatarMoeda(valor) {
+  return 'R$ ' + Number(valor || 0).toFixed(2).replace('.', ',');
+}
+
 // Formata CNPJ: 65957340000150 -> 65.957.340/0001-50
 function formatarCNPJ(cnpj) {
   if (!cnpj) return '';
@@ -84,6 +111,7 @@ async function gerarDanfeHtml({ venda, itens, empresa, chave, numero, serie, qrC
   <p>Total: R$ ${Number(venda.total || 0).toFixed(2)}</p>
   <p>Desconto: R$ ${Number(venda.desconto || 0).toFixed(2)}</p>
   <p>Forma pag.: ${venda.forma_pagamento || ''}</p>
+  ${montarPagamentosDanfe(venda.pagamentos) ? `<p>${montarPagamentosDanfe(venda.pagamentos).replace(/\n/g, '<br>')}</p>` : ''}
   <div class="sep"></div>
   ${tributosHtml}
   <div class="sep"></div>

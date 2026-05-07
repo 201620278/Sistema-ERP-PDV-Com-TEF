@@ -7,6 +7,7 @@ let vendaPrazoInfo = null;
 let vendaEmProcessamento = false;
 let pdvClockInterval = null;
 let caixaAberto = false;
+let pagamentosMistos = [];
 
 function normalizarTexto(texto) {
     return String(texto || '')
@@ -196,7 +197,14 @@ function bindEventosPDV() {
     $('#btnCancelarVendaPdv').off('click').on('click', cancelarVendaAtual);
     $('#btnFinalizarVendaPdv').off('click').on('click', abrirModalDecisaoFiscal);
     $('#btnFechamentoCaixaPdv').off('click').on('click', abrirFechamentoCaixa);
-    $('#formaPagamentoPdv').off('change').on('change', aoAlterarFormaPagamento);
+    $('#formaPagamentoPdv').off('change').on('change', function () {
+        if ($(this).val() === 'misto') {
+            abrirPagamentoMisto();
+        } else {
+            pagamentosMistos = [];
+        }
+        aoAlterarFormaPagamento();
+    });
     $('#formaPagamentoPdv').val('');
 
     // Busca de cliente para venda a prazo (sidebar)
@@ -1133,6 +1141,185 @@ function validarCpfCnpjNota(valor) {
     return doc.length === 11 || doc.length === 14;
 }
 
+function abrirPagamentoMisto() {
+    const totalVenda = carrinho.reduce((soma, item) => {
+        const qtd = Number(item.quantidade || 0);
+        const preco = Number(item.preco_unitario || item.preco || 0);
+        return soma + (qtd * preco);
+    }, 0);
+
+    function moeda(v) {
+        return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
+    }
+
+    const opcoes = {
+        dinheiro_pix: [
+            { id: 'pgDinheiro', label: 'Dinheiro', forma: 'dinheiro' },
+            { id: 'pgPix', label: 'Pix', forma: 'pix' }
+        ],
+        dinheiro_debito: [
+            { id: 'pgDinheiro', label: 'Dinheiro', forma: 'dinheiro' },
+            { id: 'pgDebito', label: 'Cartão de Débito', forma: 'cartao_debito' }
+        ],
+        dinheiro_credito: [
+            { id: 'pgDinheiro', label: 'Dinheiro', forma: 'dinheiro' },
+            { id: 'pgCredito', label: 'Cartão de Crédito', forma: 'cartao_credito' }
+        ]
+    };
+
+    $('#modal-container').html(`
+        <div class="modal fade" id="pagamentoMistoModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-content border-0 shadow-lg" style="border-radius: 16px; overflow: hidden;">
+                    <div class="modal-header text-white" style="background:#0d6efd;">
+                        <div>
+                            <h4 class="modal-title mb-0">Pagamento Misto</h4>
+                            <small>Escolha a combinação e informe os valores</small>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div class="modal-body p-4" style="background:#f5f7fb;">
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <div class="p-3 bg-white rounded shadow-sm">
+                                    <small class="text-muted">TOTAL DA VENDA</small>
+                                    <h3 class="mb-0 text-primary">${moeda(totalVenda)}</h3>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="p-3 bg-white rounded shadow-sm">
+                                    <small class="text-muted">VALOR INFORMADO</small>
+                                    <h3 class="mb-0 text-success" id="totalInformado">${moeda(0)}</h3>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="p-3 bg-white rounded shadow-sm">
+                                    <small class="text-muted">VALOR RESTANTE</small>
+                                    <h3 class="mb-0 text-danger" id="totalFalta">${moeda(totalVenda)}</h3>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded shadow-sm p-3 mb-3">
+                            <label class="fw-bold mb-2">Tipo de pagamento misto</label>
+                            <select id="tipoPagamentoMisto" class="form-select form-select-lg">
+                                <option value="">-- Selecione a combinação --</option>
+                                <option value="dinheiro_pix">Dinheiro + Pix</option>
+                                <option value="dinheiro_debito">Dinheiro + Cartão de Débito</option>
+                                <option value="dinheiro_credito">Dinheiro + Cartão de Crédito</option>
+                            </select>
+                        </div>
+
+                        <div id="camposPagamentoMisto"></div>
+
+                        <div id="alertaPagamentoMisto" class="alert alert-warning d-none mt-3 mb-0">
+                            A soma dos pagamentos precisa ser igual ao total da venda.
+                        </div>
+                    </div>
+
+                    <div class="modal-footer bg-white p-3">
+                        <button type="button" class="btn btn-outline-secondary btn-lg" data-bs-dismiss="modal">
+                            Cancelar
+                        </button>
+
+                        <button class="btn btn-success btn-lg px-5" id="btnConfirmarPagamentoMisto" disabled>
+                            Confirmar Pagamento
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+
+    const modal = new bootstrap.Modal(document.getElementById('pagamentoMistoModal'));
+    modal.show();
+
+    function renderizarCampos(tipo) {
+        const campos = opcoes[tipo];
+
+        $('#camposPagamentoMisto').html(campos.map(campo => `
+            <div class="bg-white rounded shadow-sm p-3 mb-3">
+                <label class="fw-bold mb-2">${campo.label}</label>
+                <div class="input-group input-group-lg">
+                    <span class="input-group-text">R$</span>
+                    <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        id="${campo.id}"
+                        data-forma="${campo.forma}"
+                        class="form-control pagamento-misto-input"
+                        placeholder="0"
+                    >
+                </div>
+            </div>
+        `).join(''));
+
+        $('.pagamento-misto-input').on('input', atualizarTotais);
+        $('.pagamento-misto-input').first().trigger('focus');
+        atualizarTotais();
+    }
+
+    function atualizarTotais() {
+        let informado = 0;
+
+        $('.pagamento-misto-input').each(function () {
+            informado += Number($(this).val() || 0);
+        });
+
+        const falta = totalVenda - informado;
+        const correto = Math.abs(falta) <= 0.01;
+
+        $('#totalInformado').text(moeda(informado));
+        $('#totalFalta').text(moeda(falta));
+
+        $('#btnConfirmarPagamentoMisto').prop('disabled', !correto);
+
+        if (correto) {
+            $('#alertaPagamentoMisto').addClass('d-none');
+            $('#totalFalta').removeClass('text-danger').addClass('text-success');
+        } else {
+            $('#alertaPagamentoMisto').removeClass('d-none');
+            $('#totalFalta').removeClass('text-success').addClass('text-danger');
+        }
+    }
+
+    $('#tipoPagamentoMisto').on('change', function () {
+        const tipo = $(this).val();
+        pagamentosMistos = [];
+
+        if (tipo && opcoes[tipo]) {
+            renderizarCampos(tipo);
+        } else {
+            $('#camposPagamentoMisto').empty();
+            $('#btnConfirmarPagamentoMisto').prop('disabled', true);
+        }
+    });
+
+    $('#btnConfirmarPagamentoMisto').on('click', function () {
+        pagamentosMistos = [];
+
+        $('.pagamento-misto-input').each(function () {
+            const valor = Number($(this).val() || 0);
+            const forma = $(this).data('forma');
+
+            if (valor > 0) {
+                pagamentosMistos.push({
+                    forma_pagamento: forma,
+                    valor
+                });
+            }
+        });
+
+        $('#formaPagamento').val('misto');
+
+        modal.hide();
+
+        showNotification('Pagamento misto configurado com sucesso.', 'success');
+    });
+}
+
 function mostrarModalCpfCnpjNota() {
     $('#modal-container').html(`
         <div class="modal fade" id="cpfCnpjNotaModal" tabindex="-1" aria-hidden="true">
@@ -1327,11 +1514,17 @@ function executarFinalizacaoVenda(emitirFiscal = false, cpfCnpjNota = null) {
     const dados = {
         cliente_id: clienteId,
         cliente_nome: clienteSelecionado?.nome || vendaPrazoInfo?.cliente_nome || null,
-        forma_pagamento: formaPagamento,
+        forma_pagamento: pagamentosMistos.length > 1 ? "misto" : formaPagamento,
         desconto,
         total,
         emitir_fiscal: emitirFiscal,
         cpf_cnpj_nota: emitirFiscal ? cpfCnpjNota : null,
+        pagamentos: pagamentosMistos.length > 0 ? pagamentosMistos : [
+            {
+                forma_pagamento: formaPagamento,
+                valor: total
+            }
+        ],
         itens: carrinho.map(item => ({
             produto_id: Number(item.id),
             quantidade: Number(item.quantidade),
@@ -1424,6 +1617,7 @@ function finalizarPosVenda() {
     formaPagamentoSelecionada = null;
     clienteSelecionado = null;
     vendaPrazoInfo = null;
+    pagamentosMistos = [];
     $('#descontoPdv').val(0);
     $('#formaPagamentoPdv').val('');
     $('#valorRecebidoPDV').val('');

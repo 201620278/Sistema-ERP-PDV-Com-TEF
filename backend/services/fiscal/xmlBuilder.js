@@ -53,13 +53,8 @@ function montarPagamentos(pagamentos) {
   let xml = '<pag>';
 
   pagamentos.forEach(p => {
-    let tPag = '99';
-
-    if (p.tipo === 'dinheiro') tPag = '01';
-    else if (p.tipo === 'pix') tPag = '17';
-    else if (p.tipo === 'cartao_credito') tPag = '03';
-    else if (p.tipo === 'cartao_debito') tPag = '04';
-    else if (p.tipo === 'promissoria') tPag = '05';
+    const formaPagamento = p.forma_pagamento || p.tipo || '';
+    const tPag = mapearFormaPagamento(formaPagamento);
 
     xml += `
       <detPag>
@@ -329,7 +324,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
 
   const pagamentosVenda = venda.pagamentos && venda.pagamentos.length > 0
     ? venda.pagamentos
-    : [{ tipo: venda.forma_pagamento || 'outro', valor: vNF }];
+    : [{ forma_pagamento: venda.forma_pagamento || 'outro', valor: vNF }];
 
   const pag = montarPagamentos(pagamentosVenda);
 
