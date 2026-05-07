@@ -8,6 +8,23 @@ function formatarCNPJ(cnpj) {
   return numeros.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
 }
 
+function formatarCpfCnpj(valor) {
+  const v = String(valor || '').replace(/\D/g, '');
+
+  if (v.length === 11) {
+    return v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  }
+
+  if (v.length === 14) {
+    return v.replace(
+      /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+      '$1.$2.$3/$4-$5'
+    );
+  }
+
+  return valor || '';
+}
+
 async function gerarDanfeHtml({ venda, itens, empresa, chave, numero, serie, qrCodeUrl, tributos }) {
   const qrCodeDataUrl = qrCodeUrl ? await QRCode.toDataURL(qrCodeUrl) : '';
 
@@ -49,6 +66,12 @@ async function gerarDanfeHtml({ venda, itens, empresa, chave, numero, serie, qrC
     <p>${empresa.endereco || ''}</p>
     <p>DANFE NFC-e - Documento Auxiliar</p>
     <p>NFC-e nº ${numero} Série ${serie}</p>
+    ${venda.cpf_cnpj_nota ? `
+<div style="margin-top: 5px;">
+  <strong>CPF/CNPJ do Consumidor:</strong>
+  ${formatarCpfCnpj(venda.cpf_cnpj_nota)}
+</div>
+` : ''}
   </div>
   <div class="sep"></div>
   <table>

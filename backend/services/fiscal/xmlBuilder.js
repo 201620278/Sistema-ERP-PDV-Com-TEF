@@ -162,23 +162,50 @@ function gtinValido(codigo) {
   return calculado === digito;
 }
 
-function obterEANFiscal(item) {
-  const unidade = String(item.unidade || '').toLowerCase();
-  const codigo = item.codigo_barras || item.produto_codigo_barras || '';
+function montarDestinatarioNFCe(cpfCnpj) {
+  const doc = onlyDigits(cpfCnpj || '');
 
-  if (unidade === 'kg') {
-    return 'SEM GTIN';
+  if (!doc) {
+    return '';
   }
 
-  if (codigoInternoOuBalanca(codigo)) {
-    return 'SEM GTIN';
+  if (doc.length === 11) {
+    return `
+    <dest>
+      <CPF>${doc}</CPF>
+      <indIEDest>9</indIEDest>
+    </dest>`;
   }
 
-  if (!gtinValido(codigo)) {
-    return 'SEM GTIN';
+  if (doc.length === 14) {
+    return `
+    <dest>
+      <CNPJ>${doc}</CNPJ>
+      <indIEDest>9</indIEDest>
+    </dest>`;
   }
 
-  return onlyDigits(codigo);
+  return '';
+}
+
+function obterEANFiscal(produto) {
+  const codigo = String(
+    produto?.codigo_barras ||
+    produto?.codigo_barra ||
+    produto?.ean ||
+    produto?.cEAN ||
+    ""
+  ).replace(/\D/g, "");
+
+  if (!codigo) {
+    return "SEM GTIN";
+  }
+
+  if (![8, 12, 13, 14].includes(codigo.length)) {
+    return "SEM GTIN";
+  }
+
+  return codigo;
 }
 
 function buildNfceXml({ config, venda, itens, numero }) {
@@ -252,7 +279,6 @@ function buildNfceXml({ config, venda, itens, numero }) {
     const tagCEST = cestLimpo.length === 7
       ? `<CEST>${cestLimpo}</CEST>`
       : '';
-    const cEAN = obterEANFiscal(item);
     const unidade = item.unidade || 'UN';
     const xProd = Number(config.ambiente) === 2 && idx === 0
       ? descricaoHomologacao
@@ -262,7 +288,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
       <det nItem="${idx + 1}">
         <prod>
           <cProd>${xmlEscape(String(item.produto_id || idx + 1))}</cProd>
-          <cEAN>${xmlEscape(cEAN || 'SEM GTIN')}</cEAN>
+          <cEAN>${obterEANFiscal(item)}</cEAN>
           <xProd>${xmlEscape(xProd)}</xProd>
           <NCM>${ncm}</NCM>
           ${tagCEST}
@@ -271,7 +297,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
           <qCom>${formatNumber(quantidade, 4)}</qCom>
           <vUnCom>${formatNumber(valorUnitario, 10)}</vUnCom>
           <vProd>${formatNumber(subtotal, 2)}</vProd>
-          <cEANTrib>${xmlEscape(cEAN || 'SEM GTIN')}</cEANTrib>
+          <cEANTrib>${obterEANFiscal(item)}</cEANTrib>
           <uTrib>${xmlEscape(unidade)}</uTrib>
           <qTrib>${formatNumber(quantidade, 4)}</qTrib>
           <vUnTrib>${formatNumber(valorUnitario, 10)}</vUnTrib>
@@ -352,6 +378,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
       <IE>${emit.IE}</IE>
       <CRT>${emit.CRT}</CRT>
     </emit>
+    ${montarDestinatarioNFCe(venda.cpf_cnpj_nota)}
     ${dets}
     <total>
       <ICMSTot>

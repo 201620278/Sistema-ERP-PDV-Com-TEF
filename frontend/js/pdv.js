@@ -1117,8 +1117,108 @@ function finalizarComFiscal() {
     }
 
     setTimeout(() => {
-        executarFinalizacaoVenda(true);
+        mostrarModalCpfCnpjNota();
     }, 300);
+}
+
+function limparCpfCnpj(valor) {
+    return String(valor || '').replace(/\D/g, '');
+}
+
+function validarCpfCnpjNota(valor) {
+    const doc = limparCpfCnpj(valor);
+
+    if (!doc) return true;
+
+    return doc.length === 11 || doc.length === 14;
+}
+
+function mostrarModalCpfCnpjNota() {
+    $('#modal-container').html(`
+        <div class="modal fade" id="cpfCnpjNotaModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-sm modal-dialog-centered">
+                <div class="modal-content border-0 shadow">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title mb-0">CPF/CNPJ na Nota</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <label class="form-label">Informe CPF ou CNPJ do cliente</label>
+                        <input
+                            type="text"
+                            id="cpfCnpjNotaFiscal"
+                            class="form-control"
+                            placeholder="Opcional"
+                            maxlength="18"
+                            autocomplete="off"
+                        >
+
+                        <small class="text-muted d-block mt-2">
+                            Deixe em branco para emitir como consumidor não identificado.
+                        </small>
+
+                        <div class="d-grid gap-2 mt-3">
+                            <button type="button" class="btn btn-success" id="btnConfirmarCpfNota">
+                                Emitir NFC-e
+                            </button>
+
+                            <button type="button" class="btn btn-secondary" id="btnEmitirSemCpf">
+                                Emitir sem CPF/CNPJ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+
+    const modalEl = document.getElementById('cpfCnpjNotaModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+
+    $('#cpfCnpjNotaFiscal').trigger('focus');
+
+    $('#cpfCnpjNotaFiscal').on('input', function () {
+        let v = limparCpfCnpj(this.value);
+
+        if (v.length <= 11) {
+            v = v.replace(/(\d{3})(\d)/, '$1.$2');
+            v = v.replace(/(\d{3})(\d)/, '$1.$2');
+            v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+        } else {
+            v = v.replace(/^(\d{2})(\d)/, '$1.$2');
+            v = v.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
+            v = v.replace(/\.(\d{3})(\d)/, '.$1/$2');
+            v = v.replace(/(\d{4})(\d)/, '$1-$2');
+        }
+
+        this.value = v;
+    });
+
+    $('#btnConfirmarCpfNota').off('click').on('click', function () {
+        const cpfCnpj = $('#cpfCnpjNotaFiscal').val();
+
+        if (!validarCpfCnpjNota(cpfCnpj)) {
+            showNotification('CPF/CNPJ inválido. Informe 11 ou 14 números.', 'warning');
+            $('#cpfCnpjNotaFiscal').trigger('focus');
+            return;
+        }
+
+        modal.hide();
+
+        setTimeout(() => {
+            executarFinalizacaoVenda(true, limparCpfCnpj(cpfCnpj));
+        }, 300);
+    });
+
+    $('#btnEmitirSemCpf').off('click').on('click', function () {
+        modal.hide();
+
+        setTimeout(() => {
+            executarFinalizacaoVenda(true, null);
+        }, 300);
+    });
 }
 
 
@@ -1175,7 +1275,7 @@ function mostrarModalAvisoDebitoCliente(aviso, totalEmAberto, parcelasVencidas, 
     });
 }
 
-function executarFinalizacaoVenda(emitirFiscal = false) {
+function executarFinalizacaoVenda(emitirFiscal = false, cpfCnpjNota = null) {
     if (vendaEmProcessamento) {
         showNotification('A venda já está sendo processada.', 'warning');
         return;
@@ -1231,6 +1331,7 @@ function executarFinalizacaoVenda(emitirFiscal = false) {
         desconto,
         total,
         emitir_fiscal: emitirFiscal,
+        cpf_cnpj_nota: emitirFiscal ? cpfCnpjNota : null,
         itens: carrinho.map(item => ({
             produto_id: Number(item.id),
             quantidade: Number(item.quantidade),

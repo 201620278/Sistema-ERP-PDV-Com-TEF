@@ -210,7 +210,27 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
   console.log('ENTROU NA ROTA DE EMISSAO NFC-E');
   console.log('DADOS RECEBIDOS PARA EMISSAO:', req.body);
 
-  const { cliente_id, total, desconto, forma_pagamento, itens, parcelas, primeiro_vencimento, forcar, emitir_fiscal, valor_recebido } = req.body;
+  const {
+    cliente_id,
+    total,
+    desconto,
+    forma_pagamento,
+    itens,
+    parcelas,
+    primeiro_vencimento,
+    forcar,
+    emitir_fiscal,
+    valor_recebido,
+    cpf_cnpj_nota
+  } = req.body;
+
+  const cpfCnpjNotaLimpo = String(cpf_cnpj_nota || '').replace(/\D/g, '');
+
+  if (cpfCnpjNotaLimpo && ![11, 14].includes(cpfCnpjNotaLimpo.length)) {
+    return res.status(400).json({
+      error: 'CPF/CNPJ informado na nota é inválido.'
+    });
+  }
   const totalNum = Number(total);
   const formasPendentes = ['prazo'];
   const formaPagamentoNormalizada = String(forma_pagamento || '').toLowerCase().trim();
@@ -436,9 +456,30 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
     db.serialize(() => {
       db.run('BEGIN TRANSACTION');
       db.run(`
-        INSERT INTO vendas (codigo, data_venda, cliente_id, total, desconto, forma_pagamento, status, valor_recebido, caixa_id)
-        VALUES (?, ?, ?, ?, ?, ?, 'concluida', ?, ?)
-      `, [codigo, data_venda, cliente_id || null, totalNum, desconto || 0, forma_pagamento, valor_recebido || null, req.caixaId], function(err) {
+        INSERT INTO vendas (
+          codigo,
+          data_venda,
+          cliente_id,
+          total,
+          desconto,
+          forma_pagamento,
+          status,
+          valor_recebido,
+          caixa_id,
+          cpf_cnpj_nota
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'concluida', ?, ?, ?)
+      `, [
+        codigo,
+        data_venda,
+        cliente_id || null,
+        totalNum,
+        desconto || 0,
+        forma_pagamento,
+        valor_recebido || null,
+        req.caixaId,
+        emitir_fiscal ? cpfCnpjNotaLimpo || null : null
+      ], function(err) {
         if (err) {
           db.run('ROLLBACK');
           res.status(500).json({ error: err.message });

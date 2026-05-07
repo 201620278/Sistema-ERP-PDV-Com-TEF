@@ -142,7 +142,8 @@ function aplicarAlteracoesPosCriacao() {
 
   const alteracoesVendas = [
     `ALTER TABLE vendas ADD COLUMN valor_recebido DECIMAL(10,2)`,
-    `ALTER TABLE vendas ADD COLUMN status TEXT DEFAULT 'concluida'`
+    `ALTER TABLE vendas ADD COLUMN status TEXT DEFAULT 'concluida'`,
+    `ALTER TABLE vendas ADD COLUMN cpf_cnpj_nota TEXT`
   ];
 
   alteracoesProdutos.forEach(sql => aplicarAlteracaoSegura('produtos', sql));
