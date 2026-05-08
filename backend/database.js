@@ -143,7 +143,17 @@ function aplicarAlteracoesPosCriacao() {
   const alteracoesVendas = [
     `ALTER TABLE vendas ADD COLUMN valor_recebido DECIMAL(10,2)`,
     `ALTER TABLE vendas ADD COLUMN status TEXT DEFAULT 'concluida'`,
-    `ALTER TABLE vendas ADD COLUMN cpf_cnpj_nota TEXT`
+    `ALTER TABLE vendas ADD COLUMN cpf_cnpj_nota TEXT`,
+    `ALTER TABLE vendas ADD COLUMN cancelada INTEGER DEFAULT 0`,
+    `ALTER TABLE vendas ADD COLUMN data_cancelamento DATETIME`
+  ];
+
+  const alteracoesContasReceber = [
+    `ALTER TABLE contas_receber ADD COLUMN observacao TEXT`
+  ];
+
+  const alteracoesCaixaMovimentacoes = [
+    `ALTER TABLE caixa_movimentacoes ADD COLUMN usuario_id INTEGER`
   ];
 
   alteracoesProdutos.forEach(sql => aplicarAlteracaoSegura('produtos', sql));
@@ -151,6 +161,8 @@ function aplicarAlteracoesPosCriacao() {
   alteracoesFinanceiro.forEach(sql => aplicarAlteracaoSegura('financeiro', sql));
   alteracoesComprasItens.forEach(sql => aplicarAlteracaoSegura('compras_itens', sql));
   alteracoesVendas.forEach(sql => aplicarAlteracaoSegura('vendas', sql));
+  alteracoesContasReceber.forEach(sql => aplicarAlteracaoSegura('contas_receber', sql));
+  alteracoesCaixaMovimentacoes.forEach(sql => aplicarAlteracaoSegura('caixa_movimentacoes', sql));
 }
 
 function criarTabelas() {
@@ -493,6 +505,20 @@ function criarTabelas() {
     `, (err) => {
       if (err) console.error('Erro ao criar tabela usuario_permissoes:', err);
       else console.log('Tabela usuario_permissoes criada/verificada');
+    });
+
+    // Tabela de vendas canceladas
+    db.run(`
+      CREATE TABLE IF NOT EXISTS vendas_canceladas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        venda_id INTEGER NOT NULL,
+        motivo TEXT,
+        usuario_id INTEGER,
+        data_cancelamento DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (err) => {
+      if (err) console.error('Erro ao criar tabela vendas_canceladas:', err);
+      else console.log('Tabela vendas_canceladas criada/verificada');
     });
 
     // Tabela de NFC-e emitidas
@@ -847,8 +873,10 @@ db.serialize(() => {
       tipo TEXT NOT NULL,
       valor DECIMAL(10,2) DEFAULT 0,
       motivo TEXT,
+      usuario_id INTEGER,
       criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (caixa_id) REFERENCES caixa(id)
+      FOREIGN KEY (caixa_id) REFERENCES caixa(id),
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
     )
   `);
 });

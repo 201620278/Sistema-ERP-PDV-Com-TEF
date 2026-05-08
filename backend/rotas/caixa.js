@@ -214,7 +214,7 @@ router.get('/saldo-inicial-sugerido', (req, res) => {
   });
 });
 
-router.post('/abrir', (req, res) => {
+router.post('/abrir', verificarToken, (req, res) => {
   const valorInicial = n(req.body.valor_inicial);
 
   db.get(`
@@ -252,9 +252,10 @@ router.post('/abrir', (req, res) => {
           caixa_id,
           tipo,
           valor,
-          motivo
-        ) VALUES (?, 'abertura', ?, 'Abertura de caixa')
-      `, [caixaId, valorInicial], (movErr) => {
+          motivo,
+          usuario_id
+        ) VALUES (?, 'abertura', ?, 'Abertura de caixa', ?)
+      `, [caixaId, valorInicial, req.user?.id || null], (movErr) => {
         if (movErr) return res.status(500).json({ error: movErr.message });
 
         res.json({
@@ -338,10 +339,11 @@ router.post('/sangria', verificarToken, async (req, res) => {
                 caixa_id,
                 tipo,
                 valor,
-                motivo
-              ) VALUES (?, 'sangria', ?, ?)
+                motivo,
+                usuario_id
+              ) VALUES (?, 'sangria', ?, ?, ?)
               `,
-              [caixa.id, valor, motivo],
+              [caixa.id, valor, motivo, req.user?.id || null],
               (movErr) => {
                 if (movErr) {
                   return res.status(500).json({ error: movErr.message });
@@ -357,7 +359,7 @@ router.post('/sangria', verificarToken, async (req, res) => {
   );
 });
 
-router.post('/suprimento', (req, res) => {
+router.post('/suprimento', verificarToken, (req, res) => {
   const valor = n(req.body.valor);
   const motivo = req.body.motivo || 'Suprimento de caixa';
 
@@ -380,9 +382,10 @@ router.post('/suprimento', (req, res) => {
         caixa_id,
         tipo,
         valor,
-        motivo
-      ) VALUES (?, 'suprimento', ?, ?)
-    `, [caixa.id, valor, motivo], (movErr) => {
+        motivo,
+        usuario_id
+      ) VALUES (?, 'suprimento', ?, ?, ?)
+    `, [caixa.id, valor, motivo, req.user?.id || null], (movErr) => {
       if (movErr) return res.status(500).json({ error: movErr.message });
 
       res.json({ message: 'Suprimento registrado com sucesso.' });
@@ -390,7 +393,7 @@ router.post('/suprimento', (req, res) => {
   });
 });
 
-router.post('/fechar', (req, res) => {
+router.post('/fechar', verificarToken, (req, res) => {
   const observacao = req.body.observacao || '';
 
   db.get(`
@@ -432,6 +435,19 @@ router.post('/fechar', (req, res) => {
       ], (updateErr) => {
         if (updateErr) return res.status(500).json({ error: updateErr.message });
 
+        // Registrar movimentação de fechamento
+        db.run(`
+          INSERT INTO caixa_movimentacoes (
+            caixa_id,
+            tipo,
+            valor,
+            motivo,
+            usuario_id
+          ) VALUES (?, 'fechamento', ?, 'Fechamento de caixa', ?)
+        `, [caixa.id, dinheiroEsperado, req.user?.id || null], (movErr) => {
+          if (movErr) console.error('Erro ao registrar movimentação de fechamento:', movErr);
+        });
+
         res.json({
           message: 'Caixa fechado com sucesso.',
           resumo: {
@@ -465,6 +481,79 @@ router.get('/movimentacoes/:caixa_id', (req, res) => {
   `, [req.params.caixa_id], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows || []);
+  });
+});
+
+router.get('/por-data', (req, res) => {
+  const data = req.query.data || hoje();
+
+  db.all(`
+    SELECT *
+    FROM caixa
+    WHERE data = ?
+    ORDER BY id DESC
+  `, [data], (err, caixas) => {
+    if (err) {
+      return res.status(500).json({
+        sucesso: false,
+        mensagem: err.message
+      });
+    }
+
+    if (!caixas || caixas.length === 0) {
+      return res.json({
+        sucesso: true,
+        data,
+        caixas: []
+      });
+    }
+
+    const resultado = [];
+    let processados = 0;
+
+    caixas.forEach((caixa) => {
+      calcularResumoCaixa(caixa, (calcErr, resumo) => {
+        if (calcErr) {
+          return res.status(500).json({
+            sucesso: false,
+            mensagem: calcErr.message
+          });
+        }
+
+        db.all(`
+          SELECT
+            cm.*,
+            u.nome as usuario_nome
+          FROM caixa_movimentacoes cm
+          LEFT JOIN usuarios u ON u.id = cm.usuario_id
+          WHERE cm.caixa_id = ?
+          ORDER BY cm.id DESC
+        `, [caixa.id], (movErr, movimentacoes) => {
+          if (movErr) {
+            return res.status(500).json({
+              sucesso: false,
+              mensagem: movErr.message
+            });
+          }
+
+          resultado.push({
+            caixa,
+            resumo,
+            movimentacoes: movimentacoes || []
+          });
+
+          processados++;
+
+          if (processados === caixas.length) {
+            res.json({
+              sucesso: true,
+              data,
+              caixas: resultado
+            });
+          }
+        });
+      });
+    });
   });
 });
 

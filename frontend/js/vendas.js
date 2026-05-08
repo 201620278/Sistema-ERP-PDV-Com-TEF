@@ -103,6 +103,7 @@ function renderVendas(vendas) {
                                     <td>${rotuloStatusVenda(v.status)}</td>
                                     <td>
                                         <button class="btn btn-sm btn-info" onclick="viewVenda(${v.id})"><i class="fas fa-eye"></i></button>
+                                        ${v.status !== 'cancelada' ? `<button class="btn btn-sm btn-danger" onclick="cancelarVendaNaoFiscal(${v.id})"><i class="fas fa-times"></i></button>` : ''}
                                     </td>
                                 </tr>
                             `).join('') || '<tr><td colspan="8" class="text-center">Nenhuma venda encontrada.</td></tr>'}
@@ -224,4 +225,103 @@ function escapeHtml(text) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+function cancelarVendaNaoFiscal(vendaId) {
+    // Usar modal customizado em vez de prompt() para compatibilidade com Electron
+    const modalHtml = `
+        <div class="modal fade" id="modalCancelarVenda" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title">Cancelar Venda #${vendaId}</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Atenção: Esta ação irá devolver os produtos ao estoque.
+                        </div>
+                        <div class="mb-3">
+                            <label for="motivoCancelamento" class="form-label fw-bold">Motivo do cancelamento:</label>
+                            <textarea id="motivoCancelamento" class="form-control" rows="3" placeholder="Informe o motivo do cancelamento..."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Voltar</button>
+                        <button type="button" class="btn btn-danger" id="btnConfirmarCancelamento">
+                            <i class="fas fa-times"></i> Confirmar Cancelamento
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Remover modal anterior se existir
+    const modalAnterior = document.getElementById('modalCancelarVenda');
+    if (modalAnterior) {
+        modalAnterior.remove();
+    }
+
+    // Adicionar modal ao DOM
+    const modalContainer = document.createElement('div');
+    modalContainer.innerHTML = modalHtml;
+    document.body.appendChild(modalContainer);
+
+    // Inicializar e mostrar modal
+    const modal = new bootstrap.Modal(document.getElementById('modalCancelarVenda'));
+    modal.show();
+
+    // Focar no textarea
+    setTimeout(() => {
+        document.getElementById('motivoCancelamento').focus();
+    }, 100);
+
+    // Handler do botão confirmar
+    document.getElementById('btnConfirmarCancelamento').addEventListener('click', async () => {
+        const motivo = document.getElementById('motivoCancelamento').value.trim();
+
+        if (!motivo) {
+            showNotification('Informe o motivo do cancelamento.', 'warning');
+            return;
+        }
+
+        modal.hide();
+
+        try {
+            const resposta = await fetch(
+                `${API_URL}/vendas/cancelar/${vendaId}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify({
+                        motivo
+                    })
+                }
+            );
+
+            const dados = await resposta.json();
+
+            if (!dados.sucesso) {
+                throw new Error(dados.mensagem);
+            }
+
+            showNotification(
+                'Venda cancelada com sucesso.',
+                'success'
+            );
+
+            loadVendas();
+
+        } catch (error) {
+            showNotification(
+                error.message,
+                'danger'
+            );
+        }
+    });
 }

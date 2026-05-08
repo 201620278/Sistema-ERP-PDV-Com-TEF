@@ -828,6 +828,154 @@ router.put('/:id/cancelar', (req, res) => {
   });
 });
 
+// Cancelar venda não fiscal
+router.post('/cancelar/:id', (req, res) => {
+  const vendaId = req.params.id;
+  const { motivo } = req.body;
+
+  db.get(
+    'SELECT * FROM vendas WHERE id = ?',
+    [vendaId],
+    (err, venda) => {
+      if (err || !venda) {
+        return res.status(404).json({
+          sucesso: false,
+          mensagem: 'Venda não encontrada.'
+        });
+      }
+
+      if (venda.cancelada === 1) {
+        return res.status(400).json({
+          sucesso: false,
+          mensagem: 'Venda já cancelada.'
+        });
+      }
+
+      // Verificar se a venda é fiscal (tem NFC-e emitida)
+      db.get(
+        'SELECT id FROM nfce_notas WHERE venda_id = ? LIMIT 1',
+        [vendaId],
+        (errNfce, nfce) => {
+          if (errNfce) {
+            return res.status(500).json({
+              sucesso: false,
+              mensagem: 'Erro ao verificar NFC-e.'
+            });
+          }
+
+          if (nfce) {
+            return res.status(400).json({
+              sucesso: false,
+              mensagem: 'Venda fiscal deve ser cancelada pela NFC-e.'
+            });
+          }
+
+          db.all(
+            'SELECT * FROM vendas_itens WHERE venda_id = ?',
+            [vendaId],
+            (errItens, itens) => {
+              if (errItens) {
+                return res.status(500).json({
+                  sucesso: false,
+                  mensagem: 'Erro ao buscar itens.'
+                });
+              }
+
+              // Devolver estoque
+              const stmt = db.prepare(`
+                UPDATE produtos
+                SET estoque_atual = estoque_atual + ?
+                WHERE id = ?
+              `);
+
+              itens.forEach(item => {
+                stmt.run(
+                  Number(item.quantidade || 0),
+                  item.produto_id
+                );
+              });
+
+              stmt.finalize();
+
+              // Marcar venda como cancelada
+              db.run(
+                `
+                UPDATE vendas
+                SET
+                  cancelada = 1,
+                  status = 'cancelada',
+                  data_cancelamento = CURRENT_TIMESTAMP
+                WHERE id = ?
+                `,
+                [vendaId],
+                function (errUpdate) {
+                  if (errUpdate) {
+                    return res.status(500).json({
+                      sucesso: false,
+                      mensagem: errUpdate.message
+                    });
+                  }
+
+                  // Registrar no histórico
+                  db.run(
+                    `
+                    INSERT INTO vendas_canceladas (
+                      venda_id,
+                      motivo,
+                      usuario_id
+                    )
+                    VALUES (?, ?, ?)
+                    `,
+                    [
+                      vendaId,
+                      motivo || 'Não informado',
+                      req.usuario?.id || null
+                    ]
+                  );
+
+                  // Cancelar/estornar financeiro gerado pela venda
+                  db.run(
+                    `
+                    UPDATE financeiro
+                    SET
+                      status = 'cancelado',
+                      observacao = COALESCE(observacao, '') || ' | Cancelado automaticamente pela venda #' || ?
+                    WHERE venda_id = ?
+                    `,
+                    [vendaId, vendaId],
+                    function (errFinanceiro) {
+                      if (errFinanceiro) {
+                        console.error('Erro ao cancelar financeiro da venda:', errFinanceiro.message);
+                      }
+                    }
+                  );
+
+                  // Cancelar contas a receber da venda
+                  db.run(
+                    `
+                    UPDATE contas_receber
+                    SET
+                      status = 'cancelado',
+                      observacao = COALESCE(observacao, '') || ' | Cancelado automaticamente pela venda #' || ?
+                    WHERE venda_id = ?
+                    `,
+                    [vendaId, vendaId]
+                  );
+
+                  res.json({
+                    sucesso: true,
+                    mensagem: 'Venda cancelada com sucesso.'
+                  });
+                }
+              );
+            }
+          );
+        }
+      );
+    }
+  );
+});
+
 // Excluir venda
 router.delete('/:id', (req, res) => {
   const id = Number(req.params.id);

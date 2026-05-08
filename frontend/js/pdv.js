@@ -1257,6 +1257,26 @@ function abrirPagamentoMisto() {
         `).join(''));
 
         $('.pagamento-misto-input').on('input', atualizarTotais);
+
+        // Auto-preencher segundo campo quando o primeiro perder foco
+        const $inputs = $('.pagamento-misto-input');
+        if ($inputs.length >= 2) {
+            $inputs.first().on('blur', function() {
+                const valPrimeiro = Number($(this).val() || 0);
+                const $segundo = $inputs.eq(1);
+                const valSegundo = Number($segundo.val() || 0);
+
+                // Só preenche se o segundo estiver vazio/zero e o primeiro tiver valor
+                if (valPrimeiro > 0 && valSegundo === 0) {
+                    const restante = totalVenda - valPrimeiro;
+                    if (restante > 0) {
+                        $segundo.val(restante.toFixed(2));
+                        atualizarTotais();
+                    }
+                }
+            });
+        }
+
         $('.pagamento-misto-input').first().trigger('focus');
         atualizarTotais();
     }
@@ -1947,72 +1967,53 @@ function imprimirCupomNaoFiscal(vendaId, venda, total, desconto) {
         cartao_credito: 'Cartão de Crédito',
         cartao_debito: 'Cartão de Débito',
         pix: 'PIX',
-        prazo: 'A Prazo'
+        prazo: 'A Prazo',
+        misto: 'Misto'
     }[venda.forma_pagamento] || venda.forma_pagamento;
 
     const clienteNome = venda.cliente_nome || (vendaPrazoInfo?.cliente_nome || '');
+    const linha = '------------------------------------------------';
 
-    const infoPrazo = venda.forma_pagamento === 'prazo' && vendaPrazoInfo ? `
-        <div style="margin-top:10px;border-top:1px dashed #000;padding-top:8px;">
-            <strong>Venda a Prazo</strong><br>
-            Cliente: ${escapeHtml(vendaPrazoInfo.cliente_nome || 'Cliente')}<br>
-            Parcelas: ${vendaPrazoInfo.parcelas}<br>
-            1º Vencimento: ${escapeHtml(vendaPrazoInfo.primeiro_vencimento)}
-        </div>
-    ` : '';
+    const itensHtml = (venda.itens || []).map(item => `
+${escapeHtml(item.produto_nome || item.nome || 'Produto')}
+${Number(item.quantidade)} x R$ ${Number(item.preco_unitario || item.preco || 0).toFixed(2).replace('.', ',')} = R$ ${Number(item.subtotal || 0).toFixed(2).replace('.', ',')}
+`).join('');
 
     const cupomHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>Comprovante Não Fiscal</title>
-            <style>
-                body { font-family: monospace; width: 80mm; margin: 0 auto; padding: 10px; font-size: 12px; }
-                .header, .footer { text-align: center; }
-                .header { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed #000; }
-                .empresa { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
-                .cupom-item { margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px dotted #ccc; }
-                .total { text-align: right; margin-top: 15px; padding-top: 10px; border-top: 1px dashed #000; }
-                .footer { margin-top: 20px; padding-top: 10px; border-top: 1px dashed #000; font-size: 10px; }
-                @media print { body { margin: 0; padding: 5px; } }
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <div class="empresa">CDS Sistemas</div>
-                <div>${dataHora}</div>
-                <div>COMPROVANTE NÃO FISCAL</div>
-                <div>Venda #${vendaId}</div>
-            </div>
+<pre style="
+  font-family: monospace;
+  font-size: 13px;
+  width: 300px;
+  margin: 0 auto;
+  white-space: pre-wrap;
+">
+        ${venda.nome_empresa || 'Esquinão da Economia'}
+${venda.endereco || ''}
 
-            <div class="itens">
-                ${venda.itens.map(item => `
-                    <div class="cupom-item">
-                        ${escapeHtml(item.produto_nome || 'Produto')}<br>
-                        ${Number(item.quantidade)} x ${formatCurrency(item.preco_unitario)} = ${formatCurrency(item.subtotal)}
-                    </div>
-                `).join('')}
-            </div>
+COMPROVANTE NÃO FISCAL
+Venda #${vendaId}
+${dataHora}
 
-            <div class="total">
-                Subtotal: ${formatCurrency(total + desconto)}<br>
-                Desconto: ${formatCurrency(desconto)}<br>
-                <strong>TOTAL: ${formatCurrency(total)}</strong><br>
-                Forma de Pagamento: ${formaPagamentoTexto}
-                ${clienteNome ? `<br>Cliente: ${escapeHtml(clienteNome)}` : ''}
-            </div>
-
-            ${infoPrazo}
-
-            <div class="footer">
-                Obrigado pela preferência!<br>
-                Volte sempre.<br>
-                <strong>Este comprovante não possui valor fiscal.</strong>
-            </div>
-        </body>
-        </html>
-    `;
+${linha}
+Item                 Qtd Vl.Unit Total
+${itensHtml}
+${linha}
+Total: R$ ${Number(total || 0).toFixed(2).replace('.', ',')}
+Desconto: R$ ${Number(desconto || 0).toFixed(2).replace('.', ',')}
+Forma pag.: ${formaPagamentoTexto}
+${clienteNome ? `Cliente: ${escapeHtml(clienteNome)}` : ''}
+${venda.forma_pagamento === 'prazo' && vendaPrazoInfo ? `
+Venda a Prazo
+Cliente: ${escapeHtml(vendaPrazoInfo.cliente_nome || 'Cliente')}
+Parcelas: ${vendaPrazoInfo.parcelas}
+1º Vencimento: ${escapeHtml(vendaPrazoInfo.primeiro_vencimento)}
+` : ''}
+${linha}
+ESTE COMPROVANTE NÃO POSSUI VALOR FISCAL
+OBRIGADO PELA PREFERÊNCIA!
+VOLTE SEMPRE.
+</pre>
+`;
 
     const payloadEscPos = {
         vendaId,
