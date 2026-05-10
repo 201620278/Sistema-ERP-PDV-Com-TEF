@@ -721,7 +721,7 @@ function atualizarCarrinho() {
             if (isNaN(novaQtd) || novaQtd <= 0) {
                 removerItemCarrinho(index);
             } else {
-                alterarQuantidadeItem(index, novaQtd);
+                atualizarQuantidade(index, novaQtd);
             }
         });
     }
