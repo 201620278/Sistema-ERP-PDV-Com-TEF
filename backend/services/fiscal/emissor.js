@@ -4,11 +4,9 @@ const db = require('../../database');
 const { getFiscalConfig, incrementaNumeroFiscal, setConfiguracao } = require('./configService');
 const { carregarCertificadoPfx } = require('./certificateService');
 const {
-  buildNfceXml,
-  gerarQrCodeUrl,
-  montarInfNFeSupl,
-  anexarInfNFeSupl
+  buildNfceXml
 } = require('./xmlBuilder');
+const { gerarQRCodeNFCe } = require('./qrcode');
 const { assinarNFe } = require('./signer');
 const { montarLote, enviarLote } = require('./soapClient');
 const { compactarXml } = require('./utils');
@@ -216,19 +214,27 @@ async function emitirPorVendaId(vendaId) {
       `DigestValue: ${assinatura.digestValue || ''}`
     ].join('\n'));
 
-    qrCodeUrl = gerarQrCodeUrl({
-      consultaUrl: config.urls.consultaQr,
+    qrCodeUrl = gerarQRCodeNFCe({
       chave: xmlBase.chave,
-      tpAmb: config.ambiente
+      ambiente: config.ambiente,
+      idCSC: config.idCSC,
+      CSC: config.tokenCSC
     });
 
-    const infNFeSupl = montarInfNFeSupl({
-      qrCodeUrl,
-      urlChave: config.urls.consultaChave || config.urls.consultaQr
-    });
+    const urlConsulta = Number(config.ambiente) === 1
+      ? 'https://nfce.sefaz.ce.gov.br/pages/consultaNota.jsf'
+      : 'https://nfceh.sefaz.ce.gov.br/pages/consultaNota.jsf';
 
-    xmlAssinadoFinal = anexarInfNFeSupl(assinatura.xmlAssinado, infNFeSupl);
-    xmlAssinadoFinal = compactarXml(xmlAssinadoFinal);
+    const infNFeSupl = `<infNFeSupl><qrCode><![CDATA[${qrCodeUrl}]]></qrCode><urlChave>${urlConsulta}</urlChave></infNFeSupl>`;
+
+    // Inserir infNFeSupl antes da assinatura (que deve vir apos infNFe)
+    const signatureMatch = assinatura.xmlAssinado.match(/(<Signature[\s>])/);
+    if (signatureMatch) {
+      xmlAssinadoFinal = assinatura.xmlAssinado.replace(signatureMatch[0], `${infNFeSupl}${signatureMatch[0]}`);
+    } else {
+      // Fallback: adicionar antes de </NFe>
+      xmlAssinadoFinal = assinatura.xmlAssinado.replace('</NFe>', `${infNFeSupl}</NFe>`);
+    }
 
     salvarDebug('02-xml-nfe-assinado.xml', assinatura.xmlAssinado);
     salvarDebug('02b-qrcode-url.txt', qrCodeUrl);
@@ -239,11 +245,14 @@ async function emitirPorVendaId(vendaId) {
       throw new Error('XML final ficou sem Signature.');
     }
 
-    if (!xmlAssinadoFinal.includes('<infNFeSupl>')) {
+    console.log('XML final length:', xmlAssinadoFinal.length);
+    console.log('XML includes infNFeSupl:', xmlAssinadoFinal.includes('<infNFeSupl>'));
+    console.log('XML includes infNFeSupl xmlns:', xmlAssinadoFinal.includes('<infNFeSupl xmlns'));
+    if (!xmlAssinadoFinal.includes('<infNFeSupl')) {
       throw new Error('XML final ficou sem infNFeSupl.');
     }
 
-    if (!xmlAssinadoFinal.includes('<qrCode><![CDATA[')) {
+    if (!xmlAssinadoFinal.includes('<qrCode>') && !xmlAssinadoFinal.includes('<qrCode><![CDATA[')) {
       throw new Error('XML final ficou sem qrCode.');
     }
   } catch (error) {

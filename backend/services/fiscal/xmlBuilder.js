@@ -10,6 +10,8 @@ const {
   xmlEscape
 } = require('./utils');
 
+const { gerarQRCodeNFCe } = require('./qrcode');
+
 function splitEnderecoLivre(endereco) {
   const texto = String(endereco || '').trim();
 
@@ -104,12 +106,7 @@ function montarInfNFeSupl({ qrCodeUrl, urlChave }) {
     return '';
   }
 
-  return (
-    `<infNFeSupl>` +
-      `<qrCode><![CDATA[${qrCodeUrl}]]></qrCode>` +
-      `<urlChave>${xmlEscape(urlChave)}</urlChave>` +
-    `</infNFeSupl>`
-  );
+  return `<infNFeSupl><qrCode><![CDATA[${qrCodeUrl}]]></qrCode><urlChave>${xmlEscape(urlChave)}</urlChave></infNFeSupl>`;
 }
 
 function anexarInfNFeSupl(xmlAssinado, infNFeSupl) {
