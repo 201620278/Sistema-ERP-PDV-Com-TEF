@@ -591,7 +591,7 @@ function renderProdutos(produtos) {
                             <i class="fas fa-list"></i> Relatório de estoque
                         </button>
 
-                        <button class="btn btn-primary btn-sm" onclick="openProdutoModal()">
+                        <button class="btn btn-primary btn-sm" onclick="showProdutoModal()">
                             <i class="fas fa-plus"></i> Novo Produto
                         </button>
 

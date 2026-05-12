@@ -267,7 +267,10 @@ async function emitirPorVendaId(vendaId) {
   }
 
   const danfeHtml = await gerarDanfeHtml({
-    venda,
+    venda: {
+      ...venda,
+      tpAmb: config.ambiente
+    },
     itens,
     empresa: {
       nome: config.nomeEmpresa,
@@ -278,7 +281,10 @@ async function emitirPorVendaId(vendaId) {
     numero,
     serie: config.serie,
     qrCodeUrl,
-    tributos: xmlBase.valores
+    tributos: xmlBase.valores,
+    nota: {
+      tpAmb: config.ambiente
+    }
   });
 
   let status = assinaturaErro ? 'configuracao_pendente' : 'pendente';

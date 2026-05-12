@@ -534,3 +534,32 @@ body:not(.pdv-mode)::before {
 .calc-igual:hover {
   background: #15803d;
 }
+
+/* CSS Profissional para Botões de Pagamento PDV */
+.btnPagamentoPDV {
+  height: 150px;
+  border-radius: 20px !important;
+  border: none !important;
+  transition: all .2s ease;
+  display: flex !important;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.08);
+}
+
+.btnPagamentoPDV:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 24px rgba(0,0,0,.15);
+}
+
+.btnPagamentoPDV .atalho {
+  font-size: .9rem;
+  opacity: .7;
+}
+
+.btnPagamentoPDV .titulo {
+  font-size: 1.5rem;
+  font-weight: 600;
+}

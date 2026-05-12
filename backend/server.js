@@ -47,7 +47,7 @@ function verificarToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     const isApiRequest = req.originalUrl.startsWith('/api');
-    
+
     if (!token) {
         // Redireciona somente páginas HTML; API deve sempre retornar JSON
         if (!isApiRequest && req.accepts('html')) {
@@ -55,7 +55,7 @@ function verificarToken(req, res, next) {
         }
         return res.status(401).json({ error: 'Acesso negado' });
     }
-    
+
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) {
             if (!isApiRequest && req.accepts('html')) {
@@ -63,8 +63,32 @@ function verificarToken(req, res, next) {
             }
             return res.status(403).json({ error: 'Token inválido ou expirado' });
         }
+
+        // Usar dados do token diretamente para evitar consulta ao banco
         req.user = user;
         next();
+
+        // Se precisar do perfil, consulte na rota específica
+        // db.get(
+        //     'SELECT id, username, nome, role, COALESCE(perfil, \'USUARIO\') as perfil FROM usuarios WHERE id = ?',
+        //     [user.id],
+        //     (err, usuario) => {
+        //         if (err || !usuario) {
+        //             req.user = user;
+        //             return next();
+        //         }
+
+        //         req.user = {
+        //             id: usuario.id,
+        //             username: usuario.username,
+        //             nome: usuario.nome,
+        //             role: usuario.role,
+        //             perfil: usuario.perfil
+        //         };
+
+        //         next();
+        //     }
+        // );
     });
 }
 
@@ -102,6 +126,7 @@ const fornecedoresRoutes = require('./rotas/fornecedores');
 const impressaoRoutes = require('./rotas/impressao');
 const caixaRoutes = require('./rotas/caixa');
 const backupRoutes = require('./rotas/backup');
+// const usuariosRoutes = require('./rotas/usuarios');
 
 app.use('/api/produtos', verificarToken, produtosRoutes);
 app.use('/api/clientes', verificarToken, clientesRoutes);
@@ -116,6 +141,7 @@ app.use('/api/fornecedores', verificarToken, fornecedoresRoutes);
 app.use('/api/impressao', verificarToken, impressaoRoutes);
 app.use('/api/caixa', verificarToken, caixaRoutes);
 app.use('/api/backup', verificarToken, backupRoutes);
+// app.use('/api/usuarios', verificarToken, usuariosRoutes);
 
 // Rota principal (protegida)
 app.get('/', verificarToken, (req, res) => {

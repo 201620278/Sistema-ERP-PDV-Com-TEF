@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -247,15 +247,15 @@ function createWindow(serverPort) {
 
   // IPC para abrir comprovante em nova janela que fica na frente
   ipcMain.on('abrir-comprovante', (event, html, options = {}) => {
-    const { silent = true, deviceName } = options;
+    const { deviceName } = options;
 
     const cupomWindow = new BrowserWindow({
-      width: 420,
+      width: 380,
       height: 720,
-      title: 'Comprovante',
+      title: 'DANFE NFC-e',
       parent: mainWindow,
       modal: false,
-      show: false,
+      show: true,
       alwaysOnTop: true,
       autoHideMenuBar: true,
       webPreferences: {
@@ -265,50 +265,111 @@ function createWindow(serverPort) {
       }
     });
 
-    // Adicionar script para fechar com ESC
-    const htmlComEsc = html.replace('</body>', `
-      <script>
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape') {
-            if (window.electronAPI?.fecharJanela) {
-              window.electronAPI.fecharJanela();
-            } else {
-              window.close();
-            }
+    const htmlFinal = html.replace('</head>', `
+    <style>
+      @page {
+        size: 80mm auto;
+        margin: 0;
+      }
+
+      html, body {
+        width: 76mm !important;
+        max-width: 76mm !important;
+        margin: 0 auto !important;
+        padding: 2mm !important;
+        background: #fff !important;
+        color: #000 !important;
+        font-family: "Courier New", monospace !important;
+        font-size: 11px !important;
+        line-height: 1.18 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      img {
+        display: block !important;
+        margin: 8px auto !important;
+        width: 180px !important;
+        height: 180px !important;
+        object-fit: contain !important;
+        image-rendering: pixelated !important;
+      }
+
+      * {
+        box-sizing: border-box !important;
+        max-width: 100% !important;
+      }
+
+      table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        table-layout: fixed !important;
+      }
+
+      td, th {
+        word-break: break-word !important;
+      }
+    </style>
+  </head>`);
+
+    cupomWindow.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent(htmlFinal)}`
+    );
+
+    cupomWindow.webContents.once('did-finish-load', async () => {
+      await cupomWindow.webContents.executeJavaScript(`
+      new Promise((resolve) => {
+        const imagens = Array.from(document.images);
+
+        if (!imagens.length) {
+          setTimeout(resolve, 800);
+          return;
+        }
+
+        let total = 0;
+
+        imagens.forEach((img) => {
+          if (img.complete && img.naturalWidth > 0) {
+            total++;
+            if (total === imagens.length) setTimeout(resolve, 1000);
+          } else {
+            img.onload = () => {
+              total++;
+              if (total === imagens.length) setTimeout(resolve, 1000);
+            };
+            img.onerror = () => {
+              total++;
+              if (total === imagens.length) setTimeout(resolve, 1000);
+            };
           }
         });
-      </script>
-    </body>`);
+      });
+    `);
 
-    cupomWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlComEsc)}`);
+      const printOptions = {
+        silent: true,
+        printBackground: true,
+        margins: {
+          marginType: 'none'
+        }
+      };
 
-    cupomWindow.once('ready-to-show', () => {
-      cupomWindow.show();
-      cupomWindow.focus();
+      if (deviceName) {
+        printOptions.deviceName = deviceName;
+      }
 
-      // Imprimir silenciosamente após renderizar
-      setTimeout(() => {
-        if (!cupomWindow.isDestroyed()) {
-          const printOptions = {
-            silent: true, // Sempre silencioso, sem diálogo
+      cupomWindow.webContents.print(printOptions, (success, errorType) => {
+        if (success) {
+          console.log('[IMPRESSAO] DANFE NFC-e impresso.');
+        } else {
+          console.error('[IMPRESSAO] Falha:', errorType);
+
+          cupomWindow.webContents.print({
+            silent: false,
             printBackground: true
-          };
-
-          if (deviceName) {
-            printOptions.deviceName = deviceName;
-          }
-
-          cupomWindow.webContents.print(printOptions, (success, errorType) => {
-            if (success) {
-              console.log('[IMPRESSAO] Cupom impresso com sucesso');
-            } else {
-              console.error('[IMPRESSAO] Falha:', errorType);
-              // Se falhar silenciosamente, tenta com diálogo como fallback
-              cupomWindow.webContents.print({ silent: false });
-            }
           });
         }
-      }, 1000); // Aguardar 1s para garantir renderização
+      });
     });
   });
 
@@ -455,3 +516,46 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+// ipcMain.handle('imprimir-danfe-nfce', async (event, html) => {
+//   return new Promise((resolve, reject) => {
+//     const janelaImpressao = new BrowserWindow({
+//       width: 420,
+//       height: 700,
+//       show: false,
+//       webPreferences: {
+//         nodeIntegration: false,
+//         contextIsolation: true
+//       }
+//     });
+
+//     janelaImpressao.loadURL(
+//       'data:text/html;charset=utf-8,' + encodeURIComponent(html)
+//     );
+
+//     janelaImpressao.webContents.once('did-finish-load', () => {
+//       setTimeout(() => {
+//         janelaImpressao.webContents.print(
+//           {
+//             silent: true,
+//             printBackground: true,
+//             margins: {
+//               marginType: 'none'
+//             }
+//           },
+//           (success, errorType) => {
+//             janelaImpressao.close();
+
+//             if (!success) {
+//               console.error('Erro ao imprimir DANFE:', errorType);
+//               reject(errorType);
+//               return;
+//             }
+
+//             resolve(true);
+//           }
+//         );
+//       }, 500);
+//     });
+//   });
+// });

@@ -1,12 +1,21 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  app: 'mercadao-da-economia',
+  app: 'esquinao-da-economia',
+
   forcarReflow: () => ipcRenderer.send('forcar-reflow'),
-  focarJanela: () => ipcRenderer.send('focar-janela'),
-  abrirComprovante: (html, options) => ipcRenderer.send('abrir-comprovante', html, options),
-  selecionarPastaBackup: () => ipcRenderer.invoke('selecionar-pasta-backup'),
-  imprimirDANFESilencioso: (html, deviceName) => ipcRenderer.invoke('imprimir-danfe-silencioso', html, deviceName),
-  listarImpressoras: () => ipcRenderer.invoke('listar-impressoras'),
+
+  abrirComprovante: (html, options) =>
+    ipcRenderer.send('abrir-comprovante', html, options || {}),
+
+  selecionarPastaBackup: () =>
+    ipcRenderer.invoke('selecionar-pasta-backup'),
+
+  listarImpressoras: () =>
+    ipcRenderer.invoke('listar-impressoras'),
+
+  imprimirDANFESilencioso: (html, deviceName) =>
+    ipcRenderer.invoke('imprimir-danfe-silencioso', html, deviceName),
+
   fecharJanela: () => window.close()
 });

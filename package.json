@@ -1,5 +1,5 @@
 {
-  "name": "mercadao-da-economia",
+  "name": "esquinao-da-economia",
   "version": "1.0.3",
   "description": "Sistema de gestão para mercado",
   "author": "CDS Sistemas",
@@ -35,9 +35,9 @@
     "nodemon": "^3.0.1"
   },
   "build": {
-    "appId": "com.cdssistemas.mercantil",
-    "productName": "CDS Sistemas - Mercantil",
-    "copyright": "Copyright © 2026 CDS Sistemas",
+    "appId": "com.cdssistemas.esquinao",
+    "productName": "Esquinão da Economia - PDV",
+    "copyright": "Copyright © 2026 CDS Sistemas - Cicero Diego",
     "directories": {
       "output": "dist"
     },
@@ -54,9 +54,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "CDS Sistemas - Mercantil",
-      "artifactName": "CDS-Sistemas-Mercantil-Setup-${version}.${ext}",
-      "uninstallDisplayName": "CDS Sistemas - Mercantil"
+      "shortcutName": "Esquinão da Economia",
+      "artifactName": "Esquinao-da-Economia-Setup-${version}.${ext}",
+      "uninstallDisplayName": "Esquinão da Economia"
     }
   }
 }

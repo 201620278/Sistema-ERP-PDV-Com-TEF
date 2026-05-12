@@ -170,7 +170,13 @@ function carregarFiscalConfig() {
                     ${getFiscalField('UF', 'fiscal_uf_sigla', cfg.uf || 'CE')}
                     ${getFiscalField('Código UF', 'fiscal_codigo_uf', cfg.codigoUf || '23')}
                     ${getFiscalField('Série', 'fiscal_serie', cfg.serie || 1, '', 'number')}
-                    ${getFiscalField('Número atual', 'fiscal_numero_atual', cfg.numeroAtual || 1, 'Próximo número que será usado', 'number')}
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Próximo Número NFC-e</label>
+                        <input type="number" id="proximoNumeroNfce" class="form-control fiscal-field" min="1" placeholder="Ex: 5001">
+                        <div class="form-text">Informe o próximo número da NFC-e. Exemplo: se a última NFC-e emitida foi 2458, informe 2459.</div>
+                        <small style="color:red;" id="msgNumeroNfceSuperUser">Apenas SUPER ADMIN pode alterar a numeração NFC-e.</small>
+                    </div>
+                    <input type="hidden" class="fiscal-field" id="fiscal_numero_atual" value="${cfg.numeroAtual || 1}">
                     ${getFiscalField('Regime tributário CRT', 'fiscal_regime_tributario', cfg.crt || '1', '1 = Simples Nacional')}
 
                     ${getFiscalField('Nome da empresa', 'nome_empresa', cfg.nomeEmpresa || '')}
@@ -238,6 +244,20 @@ function carregarFiscalConfig() {
 
             $('#fiscal-config-form-area').html(html);
 
+            // Carregar próximo número NFC-e
+            document.getElementById('proximoNumeroNfce').value = (parseInt(cfg.numeroAtual || 0) + 1);
+
+            // Desabilitar campo para não SUPER_ADMIN
+            const usuario = JSON.parse(localStorage.getItem('user') || '{}');
+            const campoNumero = document.getElementById('proximoNumeroNfce');
+            const msgNumero = document.getElementById('msgNumeroNfceSuperUser');
+
+            if (usuario.perfil !== 'SUPER_ADMIN') {
+                campoNumero.disabled = true;
+            } else {
+                msgNumero.style.display = 'none';
+            }
+
             $('#fiscal_ambiente').on('change', function () {
                 const val = $(this).val();
 
@@ -279,7 +299,17 @@ function coletarPayloadFiscal() {
 }
 
 function salvarConfigFiscal() {
+    // Validação do próximo número NFC-e
+    const proximoNumero = parseInt(document.getElementById('proximoNumeroNfce').value);
+    if (!proximoNumero || proximoNumero <= 0) {
+        alert('Informe um próximo número NFC-e válido.');
+        return;
+    }
+
     const payload = coletarPayloadFiscal();
+
+    // Calcular fiscal_numero_atual como (próximo número - 1)
+    payload.fiscal_numero_atual = proximoNumero - 1;
 
     $.ajax({
         url: `${API_URL}/fiscal/config`,

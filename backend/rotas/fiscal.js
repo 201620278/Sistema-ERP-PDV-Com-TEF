@@ -10,6 +10,25 @@ const { emitirPorVendaId } = require('../services/fiscal/emissor');
 const cancelarNfce = require('../services/fiscal/cancelarNfce');
 const { getFiscalSubDir } = require('../services/fiscal/paths');
 
+// Middleware para carregar perfil do usuário
+function carregarPerfilUsuario(req, res, next) {
+  if (!req.user || !req.user.id) {
+    return next();
+  }
+
+  db.get(
+    'SELECT id, username, role, COALESCE(perfil, \'USUARIO\') as perfil FROM usuarios WHERE id = ?',
+    [req.user.id],
+    (err, usuario) => {
+      if (err || !usuario) {
+        return next();
+      }
+      req.user.perfil = usuario.perfil;
+      next();
+    }
+  );
+}
+
 const pastaCertificados = getFiscalSubDir('certificados');
 
 function agoraLocalBrasil() {
@@ -82,9 +101,33 @@ router.get('/config', async (req, res) => {
   }
 });
 
-router.put('/config', async (req, res) => {
+router.put('/config', carregarPerfilUsuario, async (req, res) => {
   try {
     const payload = req.body || {};
+
+    // Validação do número NFC-e
+    if (payload.fiscal_numero_atual !== undefined) {
+      const numeroAtual = parseInt(payload.fiscal_numero_atual);
+
+      if (numeroAtual < 0) {
+        return res.status(400).json({
+          error: 'Número NFC-e inválido'
+        });
+      }
+
+      // Proteção: apenas SUPER_ADMIN pode alterar numeração NFC-e
+      const usuario = req.user || {};
+      if (usuario.perfil !== 'SUPER_ADMIN') {
+        console.log(`[AUDITORIA] Tentativa não autorizada de alterar numeração NFC-e por usuário: ${usuario.username || 'desconhecido'} (perfil: ${usuario.perfil || 'desconhecido'})`);
+        return res.status(403).json({
+          error: 'Apenas SUPER ADMIN pode alterar a numeração NFC-e.'
+        });
+      }
+
+      // Log de auditoria
+      console.log(`[AUDITORIA] SUPER ADMIN ${usuario.username || 'desconhecido'} alterou numeração NFC-e para: ${numeroAtual}`);
+    }
+
     const entries = Object.entries(payload);
     for (const [chave, valor] of entries) {
       await setConfiguracao(chave, String(valor ?? ''), 'string', `Configuração fiscal: ${chave}`);

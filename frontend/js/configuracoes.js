@@ -120,7 +120,7 @@ function renderConfiguracoes(configuracoes, usuarios) {
             <div class="card-body">
                 <p class="text-muted small">Apenas o administrador pode cadastrar ou remover usuários. O operador acessa o mesmo sistema, sem esta seção.</p>
                 <div class="table-responsive mb-3">
-                    <table class="table table-sm table-striped">
+                    <table id="usuariosTable" class="table table-sm table-striped">
                         <thead>
                             <tr>
                                 <th>Usuário</th>
@@ -146,17 +146,14 @@ function renderConfiguracoes(configuracoes, usuarios) {
                                 <tr>
                                     <td>${escapeHtml(u.username)}</td>
                                     <td><span class="badge ${badgePerfil}">${labelPerfil}</span></td>
-                                    <td>
-                                        ${u.pode_alterar_senhas ? '<span class="badge bg-info" title="Pode alterar senhas">🔑</span>' : ''}
-                                        ${u.role === 'admin' ? '<span class="badge bg-warning text-dark">Admin</span>' : '<span class="badge bg-light text-dark">Operador</span>'}
-                                    </td>
+                                    <td>${obterBadgePermissao(u.perfil)}</td>
                                     <td>${u.created_at ? formatDateTime(u.created_at) : '-'}</td>
                                     <td>
                                         ${u.username !== JSON.parse(localStorage.getItem('user') || '{}').username ? `
                                             <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick='showModalNovoUsuario(${JSON.stringify(u)})'>
                                                 <i class="fas fa-edit"></i>
                                             </button>
-                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="excluirUsuarioSistema(${u.id}, '${escapeHtml(u.username).replace(/'/g, "\\'")}')">
+                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removerUsuario(${u.id})">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         ` : '<span class="text-muted small">você</span>'}
@@ -497,19 +494,96 @@ function togglePermissoesUsuario() {
     }
 }
 
-function excluirUsuarioSistema(id) {
-    if (!confirm('Remover este usuário? Esta ação não pode ser desfeita.')) return;
-    $.ajax({
-        url: `${API_URL}/auth/usuarios/${id}`,
-        method: 'DELETE',
-        success: function() {
-            showNotification('Usuário removido.');
-            loadConfiguracoes();
-        },
-        error: function(xhr) {
-            showNotification(xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Erro ao remover.', 'danger');
+function obterBadgePermissao(perfil) {
+    const p = String(perfil || '').trim().toUpperCase();
+
+    if (p === 'SUPER_ADMIN') {
+        return `<span class="badge bg-dark">SUPER ADMIN</span>`;
+    }
+
+    if (p === 'ADMIN') {
+        return `<span class="badge bg-danger">ADMIN</span>`;
+    }
+
+    return `<span class="badge bg-secondary">OPERADOR</span>`;
+}
+
+async function carregarUsuarios() {
+    try {
+        const resposta = await fetch('/api/usuarios', {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+
+        const usuarios = await resposta.json();
+        renderizarUsuarios(usuarios);
+    } catch (erro) {
+        console.error('Erro ao carregar usuários:', erro);
+    }
+}
+
+function renderizarUsuarios(usuarios) {
+    const tbody = document.querySelector('#usuariosTable tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = usuarios.map(u => {
+        const perfil = u.perfil || 'USUARIO';
+        let badgePerfil = 'bg-secondary';
+        let labelPerfil = 'Usuário';
+        if (perfil === 'SUPER_ADMIN') {
+            badgePerfil = 'bg-dark';
+            labelPerfil = 'SUPER ADMIN';
+        } else if (perfil === 'ADMIN') {
+            badgePerfil = 'bg-danger';
+            labelPerfil = 'ADMIN';
         }
-    });
+        return `
+        <tr>
+            <td>${escapeHtml(u.username)}</td>
+            <td><span class="badge ${badgePerfil}">${labelPerfil}</span></td>
+            <td>${obterBadgePermissao(u.perfil)}</td>
+            <td>${u.created_at ? formatDateTime(u.created_at) : '-'}</td>
+            <td>
+                ${u.username !== JSON.parse(localStorage.getItem('user') || '{}').username ? `
+                    <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick='showModalNovoUsuario(${JSON.stringify(u)})'>
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removerUsuario(${u.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                ` : '<span class="text-muted small">você</span>'}
+            </td>
+        </tr>
+        `;
+    }).join('');
+}
+
+async function removerUsuario(id) {
+    if (!confirm('Deseja realmente remover este usuário?')) return;
+
+    try {
+        const resposta = await fetch(`/api/usuarios/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+
+        const dados = await resposta.json();
+
+        if (!resposta.ok) {
+            alert(dados.erro || 'Erro ao remover usuário.');
+            return;
+        }
+
+        alert('Usuário removido com sucesso.');
+        await carregarUsuarios();
+    } catch (erro) {
+        console.error('Erro ao remover usuário:', erro);
+        alert('Erro ao remover usuário.');
+    }
 }
 
 // Render config field based on type

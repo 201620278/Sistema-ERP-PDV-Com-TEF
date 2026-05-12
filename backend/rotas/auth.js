@@ -124,6 +124,7 @@ router.post('/login', (req, res) => {
             id: usuario.id,
             username: usuario.username,
             role: usuario.role,
+            perfil: usuario.perfil || 'USUARIO',
             permissoes
           },
           JWT_SECRET,
@@ -136,6 +137,7 @@ router.post('/login', (req, res) => {
             id: usuario.id,
             username: usuario.username,
             role: usuario.role,
+            perfil: usuario.perfil || 'USUARIO',
             nome: usuario.nome || usuario.username,
             permissoes
           }
@@ -157,12 +159,12 @@ router.get('/permissoes-disponiveis', exigirAdmin, (req, res) => {
   res.json(PERMISSOES_DISPONIVEIS);
 });
 
-router.get('/usuarios', exigirAdmin, (req, res) => {
+router.get('/usuarios', verificarToken, (req, res) => {
   db.all(
-    `SELECT id, username, role, COALESCE(perfil, 'USUARIO') as perfil, 
+    `SELECT id, username, role, COALESCE(perfil, 'USUARIO') as perfil,
             COALESCE(pode_alterar_senhas, 0) as pode_alterar_senhas,
-            COALESCE(ativo, 1) AS ativo, created_at 
-     FROM usuarios 
+            COALESCE(ativo, 1) AS ativo, created_at
+     FROM usuarios
      ORDER BY username`,
     [],
     (err, usuarios) => {
@@ -170,31 +172,7 @@ router.get('/usuarios', exigirAdmin, (req, res) => {
         return res.status(500).json({ error: 'Erro ao listar usuários.' });
       }
 
-      db.all(
-        `SELECT usuario_id, permissao 
-         FROM usuario_permissoes 
-         WHERE permitido = 1`,
-        [],
-        (errPerm, rowsPerm) => {
-          if (errPerm) {
-            return res.status(500).json({ error: 'Erro ao listar permissões.' });
-          }
-
-          const mapa = {};
-
-          (rowsPerm || []).forEach(p => {
-            if (!mapa[p.usuario_id]) mapa[p.usuario_id] = [];
-            mapa[p.usuario_id].push(p.permissao);
-          });
-
-          const resposta = (usuarios || []).map(u => ({
-            ...u,
-            permissoes: u.role === 'admin' ? PERMISSOES_DISPONIVEIS : (mapa[u.id] || [])
-          }));
-
-          res.json(resposta);
-        }
-      );
+      res.json(usuarios || []);
     }
   );
 });
@@ -354,26 +332,51 @@ router.put('/usuarios/:id', exigirAdmin, (req, res) => {
   });
 });
 
-router.delete('/usuarios/:id', exigirAdmin, (req, res) => {
-  const id = Number(req.params.id);
+router.delete('/usuarios/:id', verificarToken, (req, res) => {
+  const idUsuario = req.params.id;
+  const perfilLogado = String(req.user?.perfil || '').toUpperCase();
 
-  if (!id) {
-    return res.status(400).json({ error: 'ID inválido.' });
+  if (perfilLogado !== 'SUPER_ADMIN') {
+    return res.status(403).json({
+      erro: 'Apenas SUPER_ADMIN pode remover usuários.'
+    });
   }
 
-  if (req.user?.id === id) {
-    return res.status(400).json({ error: 'Você não pode desativar seu próprio usuário logado.' });
+  if (String(req.user.id) === String(idUsuario)) {
+    return res.status(400).json({
+      erro: 'Você não pode remover seu próprio usuário.'
+    });
   }
 
   db.run(
-    `UPDATE usuarios SET ativo = 0 WHERE id = ?`,
-    [id],
-    function (errDelete) {
-      if (errDelete) {
-        return res.status(500).json({ error: 'Erro ao desativar usuário.' });
+    `
+    UPDATE usuarios
+    SET ativo = 0
+    WHERE id = ?
+    `,
+    [idUsuario],
+    function (err) {
+      if (err) {
+        console.error('Erro ao remover usuário:', err);
+        return res.status(500).json({
+          erro: 'Erro ao remover usuário.'
+        });
       }
 
-      res.json({ message: 'Usuário desativado com sucesso.' });
+      if (this.changes === 0) {
+        return res.status(404).json({
+          erro: 'Usuário não encontrado.'
+        });
+      }
+
+      console.log(
+        `[AUDITORIA] Usuário ${req.user.username} (perfil: ${perfilLogado}) desativou usuário ID ${idUsuario}`
+      );
+
+      res.json({
+        sucesso: true,
+        mensagem: 'Usuário removido com sucesso.'
+      });
     }
   );
 });

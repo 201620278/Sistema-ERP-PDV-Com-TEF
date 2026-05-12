@@ -52,7 +52,30 @@ function formatarCpfCnpj(valor) {
   return valor || '';
 }
 
-async function gerarDanfeHtml({ venda, itens, empresa, chave, numero, serie, qrCodeUrl, tributos }) {
+async function gerarDanfeHtml({ venda, itens, empresa, chave, numero, serie, qrCodeUrl, tributos, nota }) {
+  console.log("===== DEBUG DANFE AMBIENTE =====");
+  console.log("venda.tpAmb:", venda?.tpAmb);
+  console.log("venda.ambiente:", venda?.ambiente);
+  console.log("nota.tpAmb:", nota?.tpAmb);
+  console.log("nota.ambiente:", nota?.ambiente);
+  console.log("================================");
+
+  const tpAmbDanfe = Number(
+    nota?.tpAmb ||
+    nota?.ambiente ||
+    venda?.tpAmb ||
+    venda?.ambiente ||
+    1
+  );
+
+  const avisoHomologacao = tpAmbDanfe === 2
+    ? `
+      <div style="text-align:center; font-weight:bold; margin:8px 0;">
+        EMITIDA EM AMBIENTE DE HOMOLOGAÇÃO - SEM VALOR FISCAL
+      </div>
+    `
+    : '';
+
   const qrCodeDataUrl = qrCodeUrl ? await QRCode.toDataURL(qrCodeUrl) : '';
 
   const itensHtml = (itens || []).map((item) => `
@@ -119,7 +142,7 @@ async function gerarDanfeHtml({ venda, itens, empresa, chave, numero, serie, qrC
   <p>${chave}</p>
   ${qrCodeDataUrl ? `<div class="center"><img src="${qrCodeDataUrl}" alt="QR Code"/><p>Consulte via QR Code</p></div>` : ''}
   <div class="sep"></div>
-  <p>EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL</p>
+  ${avisoHomologacao}
 </body>
 </html>`;
 }

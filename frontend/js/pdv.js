@@ -8,6 +8,7 @@ let vendaEmProcessamento = false;
 let pdvClockInterval = null;
 let caixaAberto = false;
 let pagamentosMistos = [];
+let formaPagamentoSelecionadaPDV = null;
 
 function normalizarTexto(texto) {
     return String(texto || '')
@@ -42,14 +43,30 @@ function loadPDV() {
     });
 }
 
+function nomePerfilUsuario(usuario) {
+    const perfil = String(usuario?.perfil || usuario?.nivel || usuario?.permissao || '')
+        .trim()
+        .toUpperCase();
+
+    if (perfil === 'SUPER_ADMIN') return 'SUPER ADMIN';
+    if (perfil === 'ADMIN') return 'ADMIN';
+    if (perfil === 'OPERADOR' || perfil === 'USUARIO') return 'OPERADOR';
+
+    return perfil || 'USUÁRIO';
+}
+
 function inicializarPDV() {
-    $('#operador-nome').text(obterNomeOperador());
+    const usuarioLogado = JSON.parse(localStorage.getItem('user') || '{}');
+    const nomeOperador = usuarioLogado.nome || usuarioLogado.username || 'Usuário';
+    const perfilOperador = nomePerfilUsuario(usuarioLogado);
+
+    $('#operadorPdv').text(`Operador: ${nomeOperador} - ${perfilOperador}`);
     verificarStatusCaixa(); // Verifica caixa antes de iniciar
     atualizarCarrinho();
     iniciarRelogioPDV();
     bindEventosPDV();
     focarCampoCodigo();
-    
+
     // Verificar status do caixa a cada 30 segundos
     setInterval(verificarStatusCaixa, 30000);
 }
@@ -195,7 +212,7 @@ function bindEventosPDV() {
 
     $('#btnLimparVendaPdv').off('click').on('click', limparCarrinho);
     $('#btnCancelarVendaPdv').off('click').on('click', cancelarVendaAtual);
-    $('#btnFinalizarVendaPdv').off('click').on('click', abrirModalDecisaoFiscal);
+    $('#btnFinalizarVendaPdv').off('click').on('click', abrirTelaPagamento);
     $('#btnFechamentoCaixaPdv').off('click').on('click', abrirFechamentoCaixa);
     $('#formaPagamentoPdv').off('change').on('change', function () {
         if ($(this).val() === 'misto') {
@@ -983,6 +1000,9 @@ function confirmarPagamento(modalEl, onConfirm) {
     }
 
     const instancia = bootstrap.Modal.getInstance(modalEl);
+    if (document.activeElement) {
+        document.activeElement.blur();
+    }
     if (instancia) instancia.hide();
 
     if (typeof onConfirm === 'function') {
@@ -1332,11 +1352,17 @@ function abrirPagamentoMisto() {
             }
         });
 
-        $('#formaPagamento').val('misto');
+        formaPagamentoSelecionadaPDV = 'misto';
+
+        if (document.activeElement) {
+            document.activeElement.blur();
+        }
 
         modal.hide();
 
-        showNotification('Pagamento misto configurado com sucesso.', 'success');
+        setTimeout(() => {
+            mostrarModalDecisaoFiscal();
+        }, 300);
     });
 }
 
@@ -1412,18 +1438,26 @@ function mostrarModalCpfCnpjNota() {
             return;
         }
 
+        if (document.activeElement) {
+            document.activeElement.blur();
+        }
+
         modal.hide();
 
         setTimeout(() => {
-            executarFinalizacaoVenda(true, limparCpfCnpj(cpfCnpj));
+            executarFinalizacaoVenda(true, limparCpfCnpj(cpfCnpj), formaPagamentoSelecionadaPDV);
         }, 300);
     });
 
     $('#btnEmitirSemCpf').off('click').on('click', function () {
+        if (document.activeElement) {
+            document.activeElement.blur();
+        }
+
         modal.hide();
 
         setTimeout(() => {
-            executarFinalizacaoVenda(true, null);
+            executarFinalizacaoVenda(true, null, formaPagamentoSelecionadaPDV);
         }, 300);
     });
 }
@@ -1431,13 +1465,20 @@ function mostrarModalCpfCnpjNota() {
 
 function finalizarSemFiscal() {
     const modalEl = document.getElementById('decisaoFiscalModal');
+
+    if (document.activeElement) {
+        document.activeElement.blur();
+    }
+
     const instancia = bootstrap.Modal.getInstance(modalEl);
 
     if (instancia) {
         instancia.hide();
     }
 
-    executarFinalizacaoVenda(false);
+    setTimeout(() => {
+        executarFinalizacaoVenda(false, null, formaPagamentoSelecionadaPDV);
+    }, 300);
 }
 
 function mostrarModalAvisoDebitoCliente(aviso, totalEmAberto, parcelasVencidas, onConfirm) {
@@ -1475,6 +1516,10 @@ function mostrarModalAvisoDebitoCliente(aviso, totalEmAberto, parcelasVencidas, 
     modal.show();
 
     $('#confirmar-continuar-debito').off('click').on('click', function() {
+        if (document.activeElement) {
+            document.activeElement.blur();
+        }
+
         modal.hide();
         if (typeof onConfirm === 'function') {
             onConfirm();
@@ -1482,7 +1527,7 @@ function mostrarModalAvisoDebitoCliente(aviso, totalEmAberto, parcelasVencidas, 
     });
 }
 
-function executarFinalizacaoVenda(emitirFiscal = false, cpfCnpjNota = null) {
+function executarFinalizacaoVenda(emitirFiscal = false, cpfCnpjNota = null, formaPagamentoDireta = null) {
     if (vendaEmProcessamento) {
         showNotification('A venda já está sendo processada.', 'warning');
         return;
@@ -1493,10 +1538,10 @@ function executarFinalizacaoVenda(emitirFiscal = false, cpfCnpjNota = null) {
         return;
     }
 
-    const formaPagamento = $('#formaPagamentoPdv').val();
+    const formaPagamento = formaPagamentoDireta || $('#formaPagamentoPdv').val();
 
     if (!formaPagamento) {
-        showNotification('Selecione uma forma de pagamento.', 'warning');
+        showNotification('Informe a forma de pagamento.', 'warning');
         return;
     }
 
@@ -1707,14 +1752,16 @@ function emitirNFCeVenda(vendaId) {
             const modalProcessando = document.getElementById('processandoNFCeModal');
             if (modalProcessando) {
                 const instancia = bootstrap.Modal.getInstance(modalProcessando);
+                if (document.activeElement) {
+                    document.activeElement.blur();
+                }
                 if (instancia) instancia.hide();
+                modalProcessando.remove();
             }
 
-            setTimeout(() => {
-                limparModaisTravados();
-                showNotification('NFC-e autorizada pela SEFAZ!', 'success');
-                mostrarModalImpressaoFiscal(vendaId, response);
-            }, 300);
+            limparModaisTravados();
+            showNotification('NFC-e autorizada pela SEFAZ!', 'success');
+            imprimirDANFEFiscal(vendaId);
         },
 
         error: function(xhr) {
@@ -1723,22 +1770,24 @@ function emitirNFCeVenda(vendaId) {
             const modalProcessando = document.getElementById('processandoNFCeModal');
             if (modalProcessando) {
                 const instancia = bootstrap.Modal.getInstance(modalProcessando);
+                if (document.activeElement) {
+                    document.activeElement.blur();
+                }
                 if (instancia) instancia.hide();
+                modalProcessando.remove();
             }
 
-            setTimeout(() => {
-                limparModaisTravados();
+            limparModaisTravados();
 
-                const mensagem =
-                    xhr.responseJSON?.erro ||
-                    xhr.responseJSON?.error ||
-                    xhr.responseJSON?.message ||
-                    xhr.responseText ||
-                    'NFC-e não autorizada pela SEFAZ.';
+            const mensagem =
+                xhr.responseJSON?.erro ||
+                xhr.responseJSON?.error ||
+                xhr.responseJSON?.message ||
+                xhr.responseText ||
+                'NFC-e não autorizada pela SEFAZ.';
 
-                showNotification(mensagem, 'danger');
-                mostrarModalErroNFCe(vendaId, mensagem);
-            }, 300);
+            showNotification(mensagem, 'danger');
+            mostrarModalErroNFCe(vendaId, mensagem);
         }
     });
 }
@@ -1852,6 +1901,13 @@ function mostrarModalImpressaoFiscal(vendaId, fiscalResponse = {}) {
 }
 
 async function mostrarModalProcessandoNFCe(vendaId) {
+    // Limpar modais anteriores
+    $('#modal-container').empty();
+    
+    // Remover qualquer backdrop existente
+    $('.modal-backdrop').remove();
+    $('body').removeClass('modal-open').css('overflow', '').css('padding-right', '');
+
     $('#modal-container').html(`
         <div class="modal fade" id="processandoNFCeModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
             <div class="modal-dialog modal-dialog-centered">
@@ -1864,15 +1920,21 @@ async function mostrarModalProcessandoNFCe(vendaId) {
                     </div>
 
                     <div class="modal-body text-center">
-                        <div class="spinner-border text-primary mb-3" role="status"></div>
+                        <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
 
-                        <p class="mb-1">
-                            Venda <strong>#${vendaId}</strong> finalizada.
+                        <h5 class="mb-2">Venda #${vendaId}</h5>
+                        
+                        <p class="text-muted mb-2">
+                            <strong>Enviando NFC-e para a SEFAZ...</strong>
                         </p>
-
-                        <p class="text-muted mb-0">
-                            Enviando NFC-e para autorização da SEFAZ...
-                        </p>
+                        
+                        <div class="alert alert-info mt-3 mb-0">
+                            <small>
+                                <i class="fas fa-info-circle me-1"></i>
+                                Este processo pode levar alguns segundos.<br>
+                                Por favor, aguarde e não feche esta janela.
+                            </small>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1881,7 +1943,11 @@ async function mostrarModalProcessandoNFCe(vendaId) {
 
     const modalEl = document.getElementById('processandoNFCeModal');
     const modal = new bootstrap.Modal(modalEl);
-    modal.show();
+    
+    // Forçar exibição do modal
+    setTimeout(() => {
+        modal.show();
+    }, 100);
 }
 
 async function imprimirDANFEFiscal(vendaId) {
@@ -1892,23 +1958,36 @@ async function imprimirDANFEFiscal(vendaId) {
         const resposta = await fetch(`${API_URL}/fiscal/danfe/venda/${vendaId}`, {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${token}` 
+                'Authorization': `Bearer ${token}`
             }
         });
 
-        const texto = await resposta.text();
+        const htmlDanfe = await resposta.text();
 
         if (!resposta.ok) {
             console.error('Erro ao buscar DANFE:', {
                 status: resposta.status,
-                resposta: texto
+                resposta: htmlDanfe
             });
 
-            showNotification(`Erro ao abrir DANFE fiscal: ${texto}`, 'danger');
+            showNotification(`Erro ao abrir DANFE fiscal: ${htmlDanfe}`, 'danger');
             return;
         }
 
-        // No Electron, mostrar cupom e imprimir silenciosamente
+        // No Electron, usar nova API de impressão DANFE NFC-e
+        // if (window.electronAPI?.imprimirDanfeNfce) {
+        //     try {
+        //         await window.electronAPI.imprimirDanfeNfce(htmlDanfe);
+        //         console.log('DANFE NFC-e impresso com sucesso.');
+        //         showNotification('DANFE NFC-e impresso com sucesso.', 'success');
+        //     } catch (erro) {
+        //         console.error('Erro ao imprimir DANFE NFC-e:', erro);
+        //         showNotification('Erro ao imprimir DANFE NFC-e.', 'danger');
+        //     }
+        //     return;
+        // }
+
+        // Fallback para método antigo
         if (window.electronAPI?.abrirComprovante) {
             try {
                 // Buscar impressora configurada
@@ -1927,12 +2006,12 @@ async function imprimirDANFEFiscal(vendaId) {
                 }
 
                 // Abrir comprovante visível e imprimir silenciosamente
-                window.electronAPI.abrirComprovante(texto, { silent: true, deviceName });
+                window.electronAPI.abrirComprovante(htmlDanfe, { silent: true, deviceName });
                 showNotification('Cupom fiscal enviado para impressora.', 'success');
             } catch (printError) {
                 console.error('Erro na impressão:', printError);
                 // Fallback: abrir janela sem impressão automática
-                window.electronAPI.abrirComprovante(texto);
+                window.electronAPI.abrirComprovante(htmlDanfe);
             }
             return;
         }
@@ -1946,7 +2025,7 @@ async function imprimirDANFEFiscal(vendaId) {
         }
 
         janela.document.open();
-        janela.document.write(texto);
+        janela.document.write(htmlDanfe);
         janela.document.close();
 
         setTimeout(() => {
@@ -2068,7 +2147,10 @@ function fecharModalErroNFCe() {
 
     if (modalEl) {
         const instancia = bootstrap.Modal.getInstance(modalEl);
-        if (instancia) instancia.hide();
+        if (document.activeElement) {
+                    document.activeElement.blur();
+                }
+                if (instancia) instancia.hide();
     }
 
     setTimeout(() => {
@@ -2170,11 +2252,348 @@ function confirmarQuantidadeProduto(produto, callback, modal) {
         return;
     }
 
+    if (document.activeElement) {
+        document.activeElement.blur();
+    }
+
     modal.hide();
 
     if (typeof callback === 'function') {
         callback(quantidade);
     }
+}
+
+function abrirTelaPagamento() {
+    const totalVenda = carrinho.reduce((soma, item) => {
+        return soma + (
+            Number(item.quantidade || 0) *
+            Number(item.preco || item.preco_unitario || 0)
+        );
+    }, 0);
+
+    $('#modal-container').html(`
+        <div class="modal fade" id="modalPagamentoPDV" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered modal-xl">
+                <div class="modal-content border-0 shadow-lg"
+                    style="
+                        border-radius: 24px;
+                        overflow: hidden;
+                        background: #f5f7fb;
+                    ">
+                    <div class="modal-body p-0">
+                        <div class="row g-0">
+                            <div class="col-md-4 bg-primary text-white d-flex flex-column justify-content-center align-items-center p-5">
+                                <small class="opacity-75 mb-2">
+                                    TOTAL DA VENDA
+                                </small>
+                                <h1 style="
+                                    font-size: 4rem;
+                                    font-weight: 700;
+                                ">
+                                    R$ ${totalVenda.toFixed(2).replace('.', ',')}
+                                </h1>
+                                <div class="mt-4 opacity-75 text-center">
+                                    Escolha a forma de pagamento
+                                </div>
+                            </div>
+                            <div class="col-md-8 p-5">
+                                <div class="row g-4">
+                                    <div class="col-md-6">
+                                        <button class="btnPagamentoPDV btn btn-light w-100"
+                                            onclick="selecionarPagamentoPDV('dinheiro')">
+                                            <div class="atalho">
+                                                1
+                                            </div>
+                                            <div class="titulo">
+                                                Dinheiro
+                                            </div>
+                                        </button>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <button class="btnPagamentoPDV btn btn-light w-100"
+                                            onclick="selecionarPagamentoPDV('pix')">
+                                            <div class="atalho">
+                                                2
+                                            </div>
+                                            <div class="titulo">
+                                                Pix
+                                            </div>
+                                        </button>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <button class="btnPagamentoPDV btn btn-light w-100"
+                                            onclick="selecionarPagamentoPDV('cartao_debito')">
+                                            <div class="atalho">
+                                                3
+                                            </div>
+                                            <div class="titulo">
+                                                Débito
+                                            </div>
+                                        </button>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <button class="btnPagamentoPDV btn btn-light w-100"
+                                            onclick="selecionarPagamentoPDV('cartao_credito')">
+                                            <div class="atalho">
+                                                4
+                                            </div>
+                                            <div class="titulo">
+                                                Crédito
+                                            </div>
+                                        </button>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <button class="btnPagamentoPDV btn btn-warning w-100"
+                                            onclick="abrirPagamentoMisto()">
+                                            <div class="atalho">
+                                                5
+                                            </div>
+                                            <div class="titulo">
+                                                Pagamento Misto
+                                            </div>
+                                        </button>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <button class="btnPagamentoPDV btn btn-outline-danger w-100"
+                                            data-bs-dismiss="modal">
+                                            <div class="atalho">
+                                                ESC
+                                            </div>
+                                            <div class="titulo">
+                                                Cancelar
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+
+    const modal = new bootstrap.Modal(
+        document.getElementById('modalPagamentoPDV')
+    );
+
+    modal.show();
+
+    $(document).off('keydown.pagamentoPDV');
+
+    $(document).on('keydown.pagamentoPDV', function(e) {
+        const modalAberto = $('#modalPagamentoPDV').hasClass('show');
+
+        if (!modalAberto) {
+            return;
+        }
+
+        if (
+            $('input:focus, textarea:focus, select:focus').length > 0
+        ) {
+            return;
+        }
+
+        switch (e.key) {
+            case '1':
+                e.preventDefault();
+                selecionarPagamentoPDV('dinheiro');
+                break;
+
+            case '2':
+                e.preventDefault();
+                selecionarPagamentoPDV('pix');
+                break;
+
+            case '3':
+                e.preventDefault();
+                selecionarPagamentoPDV('cartao_debito');
+                break;
+
+            case '4':
+                e.preventDefault();
+                selecionarPagamentoPDV('cartao_credito');
+                break;
+
+            case '5':
+                e.preventDefault();
+                abrirPagamentoMisto();
+                break;
+
+            case 'Escape':
+                e.preventDefault();
+                if (document.activeElement) {
+                    document.activeElement.blur();
+                }
+                $('#modalPagamentoPDV').modal('hide');
+                break;
+        }
+    });
+}
+
+function selecionarPagamentoPDV(forma) {
+    $(document).off('keydown.pagamentoPDV');
+
+    pagamentosMistos = [];
+    formaPagamentoSelecionadaPDV = forma;
+
+    const modalEl = document.getElementById('modalPagamentoPDV');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+
+    if (document.activeElement) {
+        document.activeElement.blur();
+    }
+
+    if (modal) {
+        modal.hide();
+    }
+
+    // Se for dinheiro, mostrar modal para informar valor recebido
+    if (forma === 'dinheiro') {
+        mostrarModalTroco();
+    } else {
+        setTimeout(() => {
+            mostrarModalDecisaoFiscal();
+        }, 300);
+    }
+}
+
+function mostrarModalTroco() {
+    const totalVenda = carrinho.reduce((soma, item) => {
+        return soma + (
+            Number(item.quantidade || 0) *
+            Number(item.preco || item.preco_unitario || 0)
+        );
+    }, 0);
+
+    $('#modal-container').html(`
+        <div class="modal fade" id="trocoModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg" style="border-radius: 18px; overflow: hidden;">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title">Pagamento em Dinheiro</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div class="modal-body p-4">
+                        <div class="text-center mb-4">
+                            <h4 class="mb-2">Total da Venda</h4>
+                            <h2 style="color: #16a34a; font-weight: 700;">
+                                R$ ${totalVenda.toFixed(2).replace('.', ',')}
+                            </h2>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="valorRecebido" class="form-label fw-bold">Valor Recebido</label>
+                            <input type="number" step="0.01" class="form-control form-control-lg" id="valorRecebido" placeholder="Digite o valor recebido">
+                        </div>
+
+                        <div class="p-3 bg-light rounded border">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fw-bold">Troco:</span>
+                                <span id="trocoCalculado" style="font-size: 1.5rem; color: #16a34a; font-weight: 700;">R$ 0,00</span>
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2 mt-4">
+                            <button class="btn btn-success btn-lg" onclick="confirmarTroco()">
+                                Confirmar
+                            </button>
+                            <button class="btn btn-secondary" data-bs-dismiss="modal">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+
+    const modal = new bootstrap.Modal(document.getElementById('trocoModal'));
+    modal.show();
+
+    // Focar no input
+    setTimeout(() => {
+        $('#valorRecebido').focus();
+    }, 300);
+
+    // Calcular troco ao digitar
+    $('#valorRecebido').off('input').on('input', function() {
+        const valorRecebido = Number(String($(this).val()).replace(',', '.')) || 0;
+        const troco = valorRecebido - totalVenda;
+        $('#trocoCalculado').text(`R$ ${Math.max(0, troco).toFixed(2).replace('.', ',')}`);
+    });
+
+    // Confirmar com Enter
+    $('#valorRecebido').off('keydown').on('keydown', function(e) {
+        if (e.key === 'Enter') {
+            confirmarTroco();
+        }
+    });
+}
+
+function confirmarTroco() {
+    const totalVenda = carrinho.reduce((soma, item) => {
+        return soma + (
+            Number(item.quantidade || 0) *
+            Number(item.preco || item.preco_unitario || 0)
+        );
+    }, 0);
+
+    const valorRecebido = Number(String($('#valorRecebido').val()).replace(',', '.')) || 0;
+
+    if (valorRecebido < totalVenda) {
+        showNotification('Valor recebido deve ser maior ou igual ao total da venda.', 'warning');
+        $('#valorRecebido').focus();
+        return;
+    }
+
+    const modalEl = document.getElementById('trocoModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+
+    if (document.activeElement) {
+        document.activeElement.blur();
+    }
+
+    if (modal) {
+        modal.hide();
+    }
+
+    setTimeout(() => {
+        mostrarModalDecisaoFiscal();
+    }, 300);
+}
+
+function mostrarModalDecisaoFiscal() {
+    $('#modal-container').html(`
+        <div class="modal fade" id="decisaoFiscalModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg" style="border-radius: 18px; overflow: hidden;">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title">Finalizar Venda</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div class="modal-body p-4">
+                        <h5 class="mb-3">Deseja emitir NFC-e?</h5>
+
+                        <div class="d-grid gap-3">
+                            <button class="btn btn-success btn-lg" onclick="finalizarComFiscal()">
+                                Sim, emitir NFC-e
+                            </button>
+
+                            <button class="btn btn-secondary btn-lg" onclick="finalizarSemFiscal()">
+                                Não, comprovante simples
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+
+    const modal = new bootstrap.Modal(document.getElementById('decisaoFiscalModal'));
+    modal.show();
 }
 
 // =======================================================
@@ -2499,4 +2918,26 @@ $(document).ready(function() {
   if (currentPage === 'pdv') {
     ativarPdvFullscreen();
   }
+});
+
+// Correção global para evitar aviso:
+// "Blocked aria-hidden on an element because its descendant retained focus"
+$(document).on('hide.bs.modal', '.modal', function () {
+    if (document.activeElement && this.contains(document.activeElement)) {
+        document.activeElement.blur();
+    }
+});
+
+// Limpeza extra quando o modal terminar de fechar
+$(document).on('hidden.bs.modal', '.modal', function () {
+    if (document.activeElement) {
+        document.activeElement.blur();
+    }
+
+    $('.modal-backdrop').remove();
+
+    if ($('.modal.show').length === 0) {
+        $('body').removeClass('modal-open');
+        $('body').css('padding-right', '');
+    }
 });
