@@ -2354,6 +2354,17 @@ function abrirTelaPagamento() {
                                         </button>
                                     </div>
                                     <div class="col-md-6">
+                                        <button class="btnPagamentoPDV btn btn-light w-100"
+                                            onclick="selecionarPagamentoPDV('prazo')">
+                                            <div class="atalho">
+                                                6
+                                            </div>
+                                            <div class="titulo">
+                                                A Prazo
+                                            </div>
+                                        </button>
+                                    </div>
+                                    <div class="col-md-6">
                                         <button class="btnPagamentoPDV btn btn-outline-danger w-100"
                                             data-bs-dismiss="modal">
                                             <div class="atalho">
@@ -2420,6 +2431,11 @@ function abrirTelaPagamento() {
                 abrirPagamentoMisto();
                 break;
 
+            case '6':
+                e.preventDefault();
+                selecionarPagamentoPDV('prazo');
+                break;
+
             case 'Escape':
                 e.preventDefault();
                 if (document.activeElement) {
@@ -2451,11 +2467,163 @@ function selecionarPagamentoPDV(forma) {
     // Se for dinheiro, mostrar modal para informar valor recebido
     if (forma === 'dinheiro') {
         mostrarModalTroco();
+    } else if (forma === 'prazo') {
+        mostrarModalClientePrazo();
     } else {
         setTimeout(() => {
             mostrarModalDecisaoFiscal();
         }, 300);
     }
+}
+
+function mostrarModalClientePrazo() {
+    const totalVenda = carrinho.reduce((soma, item) => {
+        return soma + (
+            Number(item.quantidade || 0) *
+            Number(item.preco || item.preco_unitario || 0)
+        );
+    }, 0);
+
+    const hoje = new Date();
+    const primeiroVencimento = new Date(hoje.getFullYear(), hoje.getMonth() + 1, hoje.getDate());
+
+    $('#modal-container').html(`
+        <div class="modal fade" id="clientePrazoModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg" style="border-radius: 18px; overflow: hidden;">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title">Pagamento a Prazo</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div class="modal-body p-4">
+                        <div class="text-center mb-4">
+                            <h4 class="mb-2">Total da Venda</h4>
+                            <h2 style="color: #0d6efd; font-weight: 700;">
+                                R$ ${totalVenda.toFixed(2).replace('.', ',')}
+                            </h2>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="cliente-prazo-busca" class="form-label fw-bold">Cliente *</label>
+                            <input type="text" class="form-control form-control-lg" id="cliente-prazo-busca" placeholder="Digite o nome do cliente">
+                            <input type="hidden" id="cliente-prazo-id">
+                            <div id="cliente-prazo-sugestoes" class="list-group position-absolute w-100" style="z-index: 9999; display:none; max-height: 200px; overflow-y: auto;"></div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="parcelas-prazo" class="form-label fw-bold">Quantidade de Parcelas *</label>
+                            <input type="number" min="1" max="24" class="form-control form-control-lg" id="parcelas-prazo" value="1">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="primeiro-vencimento-prazo" class="form-label fw-bold">Primeiro Vencimento *</label>
+                            <input type="date" class="form-control form-control-lg" id="primeiro-vencimento-prazo" value="${primeiroVencimento.toISOString().split('T')[0]}">
+                        </div>
+
+                        <div class="d-grid gap-2 mt-4">
+                            <button class="btn btn-primary btn-lg" onclick="confirmarPagamentoPrazo()">
+                                Confirmar
+                            </button>
+                            <button class="btn btn-secondary" data-bs-dismiss="modal">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+
+    const modal = new bootstrap.Modal(document.getElementById('clientePrazoModal'));
+    modal.show();
+
+    // Focar no input de cliente
+    setTimeout(() => {
+        $('#cliente-prazo-busca').focus();
+    }, 500);
+
+    // Busca de cliente
+    $('#cliente-prazo-busca').off('input').on('input', function() {
+        const termo = normalizarTexto($(this).val()).trim();
+        if (termo.length < 2) {
+            $('#cliente-prazo-sugestoes').empty().hide();
+            $('#cliente-prazo-id').val('');
+            return;
+        }
+
+        $.ajax({
+            url: `${API_URL}/clientes`,
+            method: 'GET',
+            success: function(clientes) {
+                const filtrados = (clientes || []).filter(c =>
+                    normalizarTexto(c.nome).includes(termo) ||
+                    String(c.cpf_cnpj || '').replace(/\D/g, '').includes(termo.replace(/\D/g, ''))
+                );
+
+                if (filtrados.length === 0) {
+                    $('#cliente-prazo-sugestoes').html('<div class="list-group-item">Nenhum cliente encontrado</div>').show();
+                    return;
+                }
+
+                $('#cliente-prazo-sugestoes').html(
+                    filtrados.map(c => `
+                        <button type="button" class="list-group-item list-group-item-action" data-id="${c.id}" data-nome="${escapeHtml(c.nome || '')}">
+                            ${escapeHtml(c.nome || '')}${c.cpf_cnpj ? ' - ' + formatarCpfCnpj(c.cpf_cnpj) : ''}
+                        </button>
+                    `).join('')
+                ).show();
+            },
+            error: function() {
+                $('#cliente-prazo-sugestoes').empty().hide();
+            }
+        });
+    });
+
+    // Selecionar cliente da sugestão
+    $(document).off('click.sugestaoCliente').on('click.sugestaoCliente', '#cliente-prazo-sugestoes button', function() {
+        $('#cliente-prazo-id').val($(this).data('id'));
+        $('#cliente-prazo-busca').val($(this).data('nome'));
+        $('#cliente-prazo-sugestoes').empty().hide();
+    });
+}
+
+function confirmarPagamentoPrazo() {
+    const clienteId = parseInt($('#cliente-prazo-id').val(), 10);
+    const parcelas = parseInt($('#parcelas-prazo').val(), 10) || 1;
+    const primeiroVencimento = $('#primeiro-vencimento-prazo').val();
+
+    if (!clienteId) {
+        showNotification('Selecione o cliente da venda a prazo.', 'danger');
+        return;
+    }
+    if (parcelas < 1) {
+        showNotification('Quantidade de parcelas inválida.', 'danger');
+        return;
+    }
+    if (!primeiroVencimento) {
+        showNotification('Informe o primeiro vencimento.', 'danger');
+        return;
+    }
+
+    vendaPrazoInfo = {
+        cliente_id: clienteId,
+        parcelas,
+        primeiro_vencimento: primeiroVencimento,
+        cliente_nome: $('#cliente-prazo-busca').val().trim()
+    };
+
+    // Fechar modal
+    const modalEl = document.getElementById('clientePrazoModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) {
+        modal.hide();
+    }
+
+    // Continuar com decisão fiscal
+    setTimeout(() => {
+        mostrarModalDecisaoFiscal();
+    }, 300);
 }
 
 function mostrarModalTroco() {
@@ -2515,7 +2683,7 @@ function mostrarModalTroco() {
     // Focar no input
     setTimeout(() => {
         $('#valorRecebido').focus();
-    }, 300);
+    }, 500);
 
     // Calcular troco ao digitar
     $('#valorRecebido').off('input').on('input', function() {
@@ -2664,6 +2832,7 @@ function abrirConsultaProdutosPDV() {
 
     modalEl.addEventListener('shown.bs.modal', function () {
         $('#inputConsultaProdutoPDV').trigger('focus');
+        carregarCategoriasConsultaPDV();
     });
 
     $('#inputConsultaProdutoPDV').off('keydown').on('keydown', function (e) {
@@ -2678,13 +2847,151 @@ function abrirConsultaProdutosPDV() {
     });
 }
 
+function carregarCategoriasConsultaPDV() {
+    $('#resultadoConsultaProdutosPDV').html(`
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary"></div>
+            <div class="mt-2">Carregando categorias...</div>
+        </div>
+    `);
+
+    $.ajax({
+        url: `${API_URL}/categorias?tipo=produto`,
+        method: 'GET',
+        success: function(categorias) {
+            if (!categorias || categorias.length === 0) {
+                $('#resultadoConsultaProdutosPDV').html(`
+                    <div class="alert alert-warning">
+                        Nenhuma categoria encontrada.
+                    </div>
+                `);
+                return;
+            }
+
+            const html = categorias.map(cat => `
+                <div class="card mb-2 categoria-card" data-categoria-id="${cat.id}">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center" style="cursor: pointer;" onclick="toggleProdutosCategoria(${cat.id})">
+                        <strong><i class="fas fa-folder me-2"></i>${escapeHtml(cat.nome)}</strong>
+                        <i class="fas fa-chevron-down" id="chevron-${cat.id}"></i>
+                    </div>
+                    <div class="card-body p-0" id="produtos-categoria-${cat.id}" style="display: none;">
+                        <div class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm text-primary"></div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            $('#resultadoConsultaProdutosPDV').html(`
+                <div class="alert alert-info py-2 mb-3">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Clique em uma categoria para ver os produtos. Use a busca acima para pesquisar em todos os produtos.
+                </div>
+                ${html}
+            `);
+        },
+        error: function() {
+            $('#resultadoConsultaProdutosPDV').html(`
+                <div class="alert alert-danger">
+                    Erro ao carregar categorias.
+                </div>
+            `);
+        }
+    });
+}
+
+function toggleProdutosCategoria(categoriaId) {
+    const container = $(`#produtos-categoria-${categoriaId}`);
+    const chevron = $(`#chevron-${categoriaId}`);
+
+    if (container.is(':visible')) {
+        container.slideUp();
+        chevron.removeClass('fa-chevron-up').addClass('fa-chevron-down');
+    } else {
+        // Se ainda não carregou os produtos, carregar
+        if (container.find('.spinner-border').length > 0) {
+            $.ajax({
+                url: `${API_URL}/produtos`,
+                method: 'GET',
+                data: { categoria_id: categoriaId },
+                success: function(produtos) {
+                    if (!produtos || produtos.length === 0) {
+                        container.html(`
+                            <div class="p-3 text-muted">
+                                Nenhum produto nesta categoria.
+                            </div>
+                        `);
+                    } else {
+                        const produtosHtml = produtos.map(p => `
+                            <div class="p-2 border-bottom produto-item" data-produto-id="${p.id}">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>${escapeHtml(p.nome)}</strong>
+                                        <small class="text-muted d-block">${p.codigo_barras || p.codigo || ''}</small>
+                                    </div>
+                                    <div class="text-end">
+                                        <div class="fw-bold text-primary">${formatCurrency(p.preco_venda)}</div>
+                                        <small class="text-muted">Estoque: ${p.estoque_atual || 0}</small>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-primary mt-2 w-100" onclick="adicionarProdutoConsultaPDV(${p.id})">
+                                    <i class="fas fa-plus"></i> Adicionar
+                                </button>
+                            </div>
+                        `).join('');
+
+                        container.html(produtosHtml);
+                    }
+                },
+                error: function() {
+                    container.html(`
+                        <div class="p-3 text-danger">
+                            Erro ao carregar produtos.
+                        </div>
+                    `);
+                }
+            });
+        }
+
+        container.slideDown();
+        chevron.removeClass('fa-chevron-down').addClass('fa-chevron-up');
+    }
+}
+
+function adicionarProdutoConsultaPDV(produtoId) {
+    const produto = produtosDisponiveis.find(p => Number(p.id) === Number(produtoId));
+    if (!produto) {
+        showNotification('Produto não encontrado.', 'danger');
+        return;
+    }
+
+    if (Number(produto.estoque_atual) <= 0) {
+        showNotification(`${produto.nome} está sem estoque.`, 'danger');
+        return;
+    }
+
+    // Se for KG, abrir modal de quantidade
+    if (unidadeEhKg(produto)) {
+        abrirModalQuantidadeProduto(produto, function (peso) {
+            adicionarItemNoCarrinho(
+                produto,
+                peso,
+                Number(produto.preco_venda || 0),
+                ` - Peso: ${peso.toFixed(3)} KG`
+            );
+        });
+    } else {
+        abrirModalQuantidadeProduto(produto, function (quantidade) {
+            adicionarItemNoCarrinho(produto, quantidade, Number(produto.preco_venda || 0));
+        });
+    }
+}
+
 function buscarProdutosConsultaPDV() {
     const termo = $('#inputConsultaProdutoPDV').val().trim();
 
     if (!termo) {
-        $('#resultadoConsultaProdutosPDV').html(`
-            <div class="alert alert-warning">Digite algo para buscar.</div>
-        `);
+        carregarCategoriasConsultaPDV();
         return;
     }
 

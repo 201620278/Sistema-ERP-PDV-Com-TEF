@@ -360,21 +360,32 @@ function aplicarFiltrosProdutos(produtos) {
     const termo = normalizarTexto($('#buscaProduto').val()).trim();
     const categoriaId = String($('#filtroCategoriaProduto').val() || '');
 
-    const filtrados = (produtos || []).filter(p => {
-        const bateBusca =
-            !termo ||
-            (p.nome && normalizarTexto(p.nome).includes(termo)) ||
-            (p.codigo && normalizarTexto(p.codigo).includes(termo)) ||
-            (p.categoria && normalizarTexto(p.categoria).includes(termo)) ||
-            (p.fornecedor && normalizarTexto(p.fornecedor).includes(termo));
+    // Se houver termo de busca ou filtro de categoria, mostrar tabela normal
+    if (termo || categoriaId) {
+        $('#categorias-container').hide();
+        $('#tabela-produtos-container').show();
 
-        const bateCategoria =
-            !categoriaId || String(p.categoria_id || '') === categoriaId;
+        const filtrados = (produtos || []).filter(p => {
+            const bateBusca =
+                !termo ||
+                (p.nome && normalizarTexto(p.nome).includes(termo)) ||
+                (p.codigo && normalizarTexto(p.codigo).includes(termo)) ||
+                (p.categoria && normalizarTexto(p.categoria).includes(termo)) ||
+                (p.fornecedor && normalizarTexto(p.fornecedor).includes(termo));
 
-        return bateBusca && bateCategoria;
-    });
+            const bateCategoria =
+                !categoriaId || String(p.categoria_id || '') === categoriaId;
 
-    $('#produtos-tbody').html(renderProdutosAgrupados(filtrados));
+            return bateBusca && bateCategoria;
+        });
+
+        $('#produtos-tbody').html(renderProdutosAgrupados(filtrados));
+    } else {
+        // Se não houver filtro, mostrar categorias
+        $('#categorias-container').show();
+        $('#tabela-produtos-container').hide();
+        carregarCategoriasProdutos();
+    }
 }
 
 function renderProdutoRow(p) {
@@ -579,6 +590,7 @@ function gerarRelatorioEstoque() {
 // Renderiza listagem de produtos
 function renderProdutos(produtos) {
     window.produtosCache = produtos;
+    window.produtosOriginais = produtos;
     const html = `
         <div class="card">
             <div class="card-header">
@@ -616,7 +628,14 @@ function renderProdutos(produtos) {
             </div>
 
             <div class="card-body">
-                <div class="table-responsive">
+                <div class="alert alert-info py-2 mb-3">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Clique em uma categoria para ver os produtos. Use a busca acima para pesquisar em todos os produtos.
+                </div>
+                <div id="categorias-container">
+                    ${renderCategoriasProdutos(produtos)}
+                </div>
+                <div class="table-responsive" id="tabela-produtos-container" style="display: none;">
                     <table class="table table-striped table-hover">
                         <thead>
                             <tr>
@@ -631,7 +650,6 @@ function renderProdutos(produtos) {
                             </tr>
                         </thead>
                         <tbody id="produtos-tbody">
-                            ${renderProdutosAgrupados(produtos)}
                         </tbody>
                     </table>
                 </div>
@@ -644,6 +662,140 @@ function renderProdutos(produtos) {
     $('#buscaProduto, #filtroCategoriaProduto').on('input change', function () {
         aplicarFiltrosProdutos(produtos);
     });
+
+    // Carregar categorias inicialmente
+    carregarCategoriasProdutos();
+}
+
+function renderCategoriasProdutos(produtos) {
+    if (!produtos || produtos.length === 0) {
+        return '<div class="alert alert-warning">Nenhum produto encontrado.</div>';
+    }
+
+    // Extrair categorias únicas dos produtos
+    const categoriasMap = new Map();
+    produtos.forEach(p => {
+        const catId = p.categoria_id || '';
+        const catNome = p.categoria || p.categoria_nome || 'Sem Categoria';
+        if (!categoriasMap.has(catId)) {
+            categoriasMap.set(catId, { id: catId, nome: catNome, count: 0 });
+        }
+        categoriasMap.get(catId).count++;
+    });
+
+    const categorias = Array.from(categoriasMap.values()).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+    return categorias.map(cat => `
+        <div class="card mb-2 categoria-card" data-categoria-id="${cat.id}">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center" style="cursor: pointer;" onclick="toggleProdutosCategoriaMenu('${cat.id}', '${escapeHtml(cat.nome)}')">
+                <strong><i class="fas fa-folder me-2"></i>${escapeHtml(cat.nome)}</strong>
+                <span class="badge bg-primary">${cat.count}</span>
+            </div>
+            <div class="card-body p-0" id="produtos-categoria-${cat.id}" style="display: none;">
+                <div class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm text-primary"></div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function carregarCategoriasProdutos() {
+    $('#categorias-container').html(`
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary"></div>
+            <div class="mt-2">Carregando categorias...</div>
+        </div>
+    `);
+
+    $.ajax({
+        url: `${API_URL}/categorias?tipo=produto`,
+        method: 'GET',
+        success: function(categorias) {
+            if (!categorias || categorias.length === 0) {
+                $('#categorias-container').html(`
+                    <div class="alert alert-warning">
+                        Nenhuma categoria encontrada.
+                    </div>
+                `);
+                return;
+            }
+
+            // Contar produtos por categoria
+            const categoriasComContagem = categorias.map(cat => {
+                const count = (window.produtosCache || []).filter(p => String(p.categoria_id) === String(cat.id)).length;
+                return { ...cat, count };
+            }).filter(cat => cat.count > 0);
+
+            const html = categoriasComContagem.map(cat => `
+                <div class="card mb-2 categoria-card" data-categoria-id="${cat.id}">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center" style="cursor: pointer;" onclick="toggleProdutosCategoriaMenu(${cat.id}, '${escapeHtml(cat.nome)}')">
+                        <strong><i class="fas fa-folder me-2"></i>${escapeHtml(cat.nome)}</strong>
+                        <span class="badge bg-primary">${cat.count}</span>
+                    </div>
+                    <div class="card-body p-0" id="produtos-categoria-${cat.id}" style="display: none;">
+                        <div class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm text-primary"></div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            $('#categorias-container').html(html);
+        },
+        error: function() {
+            $('#categorias-container').html(`
+                <div class="alert alert-danger">
+                    Erro ao carregar categorias.
+                </div>
+            `);
+        }
+    });
+}
+
+function toggleProdutosCategoriaMenu(categoriaId, categoriaNome) {
+    const container = $(`#produtos-categoria-${categoriaId}`);
+
+    if (container.is(':visible')) {
+        container.slideUp();
+    } else {
+        // Se ainda não carregou os produtos, carregar
+        if (container.find('.spinner-border').length > 0) {
+            const produtosCategoria = (window.produtosCache || []).filter(p => String(p.categoria_id) === String(categoriaId));
+
+            if (!produtosCategoria || produtosCategoria.length === 0) {
+                container.html(`
+                    <div class="p-3 text-muted">
+                        Nenhum produto nesta categoria.
+                    </div>
+                `);
+            } else {
+                const tabelaHtml = `
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>Código</th>
+                                    <th>Unidade</th>
+                                    <th>Preço Compra</th>
+                                    <th>Preço Venda</th>
+                                    <th>Estoque</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${produtosCategoria.map(p => renderProdutoRow(p)).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                container.html(tabelaHtml);
+            }
+        }
+
+        container.slideDown();
+    }
 }
 
 function renderProdutosRows(produtos) {

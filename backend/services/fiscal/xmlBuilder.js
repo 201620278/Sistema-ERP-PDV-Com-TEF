@@ -225,16 +225,51 @@ function buildNfceXml({ config, venda, itens, numero }) {
     IE: onlyDigits(config.ie),
     CRT: config.crt,
     enderEmit: {
-      xLgr: config.logradouro || enderecoLivre.xLgr || 'ENDERECO NAO INFORMADO',
-      nro: config.numeroEndereco || enderecoLivre.nro || 'S/N',
-      xBairro: config.bairro || enderecoLivre.xBairro || 'CENTRO',
-      cMun: config.municipioCodigo,
-      xMun: config.municipioNome,
-      UF: config.uf,
-      CEP: onlyDigits(config.cep || ''),
+      xLgr: String(
+        config.endereco ||
+        config.logradouro ||
+        'RUA NAO INFORMADA'
+      ).trim(),
+
+      nro: String(
+        config.numero ||
+        'S/N'
+      ).trim(),
+
+      xBairro: String(
+        config.bairro ||
+        'CENTRO'
+      ).trim(),
+
+      cMun: String(
+        config.codigo_municipio ||
+        '2307304'
+      ).trim(),
+
+      xMun: String(
+        config.cidade ||
+        config.municipio ||
+        'JUAZEIRO DO NORTE'
+      ).trim(),
+
+      UF: String(
+        config.uf ||
+        'CE'
+      ).trim(),
+
+      CEP: String(
+        config.cep ||
+        '63000000'
+      ).replace(/\D/g, ''),
+
       cPais: '1058',
+
       xPais: 'BRASIL',
-      fone: onlyDigits(config.telefone || '')
+
+      fone: String(
+        config.telefone ||
+        ''
+      ).replace(/\D/g, '')
     }
   };
 
