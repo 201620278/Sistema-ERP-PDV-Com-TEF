@@ -229,7 +229,8 @@ function buildNfceXml({ config, venda, itens, numero }) {
         config.endereco ||
         config.logradouro ||
         'RUA NAO INFORMADA'
-      ).trim(),
+      ).trim()
+        .substring(0, 60) || 'RUA NAO INFORMADA',
 
       nro: String(
         config.numero ||
