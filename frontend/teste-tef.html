@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Teste TEF</title>
+</head>
+<body>
+
+<h1>Teste TEF</h1>
+
+<button onclick="testarTEF()">Testar Pagamento</button>
+
+<pre id="resultado"></pre>
+
+<script>
+async function testarTEF() {
+  try {
+
+    const response = await fetch('http://localhost:3001/api/tef/pagar', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + localStorage.getItem('token')
+      },
+      body: JSON.stringify({
+        tipo: 'cartao_credito',
+        valor: 25.50,
+        parcelas: 1
+      })
+    });
+
+    const data = await response.json();
+
+    document.getElementById('resultado').textContent =
+      JSON.stringify(data, null, 2);
+
+  } catch (error) {
+    console.error(error);
+
+    document.getElementById('resultado').textContent =
+      error.message;
+  }
+}
+</script>
+
+</body>
+</html>

@@ -55,6 +55,51 @@ function nomePerfilUsuario(usuario) {
     return perfil || 'USUÁRIO';
 }
 
+async function processarPagamentoTEF(tipo, valor, parcelas = 1) {
+    try {
+        showNotification('Processando pagamento TEF...', 'info');
+
+        console.log('CHAMANDO TEF:', {
+            tipo,
+            valor,
+            parcelas
+        });
+
+        const response = await fetch(`${API_URL}/tef/pagar`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                tipo,
+                valor: Number(valor),
+                parcelas: Number(parcelas || 1)
+            })
+        });
+
+        const data = await response.json();
+
+        console.log('RETORNO TEF:', data);
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Erro ao processar TEF.');
+        }
+
+        if (!data.aprovado) {
+            throw new Error(data.mensagem || 'Pagamento TEF negado.');
+        }
+
+        showNotification('Pagamento TEF aprovado.', 'success');
+
+        return data;
+
+    } catch (error) {
+        console.error('Erro TEF:', error);
+        showNotification(error.message || 'Erro ao processar TEF.', 'danger');
+        return null;
+    }
+}
+
 function inicializarPDV() {
     const usuarioLogado = JSON.parse(localStorage.getItem('user') || '{}');
     const nomeOperador = usuarioLogado.nome || usuarioLogado.username || 'Usuário';
@@ -1527,7 +1572,7 @@ function mostrarModalAvisoDebitoCliente(aviso, totalEmAberto, parcelasVencidas, 
     });
 }
 
-function executarFinalizacaoVenda(emitirFiscal = false, cpfCnpjNota = null, formaPagamentoDireta = null) {
+async function executarFinalizacaoVenda(emitirFiscal = false, cpfCnpjNota = null, formaPagamentoDireta = null) {
     if (vendaEmProcessamento) {
         showNotification('A venda já está sendo processada.', 'warning');
         return;
@@ -1538,7 +1583,10 @@ function executarFinalizacaoVenda(emitirFiscal = false, cpfCnpjNota = null, form
         return;
     }
 
-    const formaPagamento = formaPagamentoDireta || $('#formaPagamentoPdv').val();
+    const formaPagamento = formaPagamentoDireta || formaPagamentoSelecionadaPDV || $('#formaPagamentoPdv').val();
+
+    console.log('FORMA PAGAMENTO DETECTADA:', formaPagamento);
+    console.log('PAGAMENTOS MISTOS:', pagamentosMistos);
 
     if (!formaPagamento) {
         showNotification('Informe a forma de pagamento.', 'warning');
@@ -1610,6 +1658,76 @@ function executarFinalizacaoVenda(emitirFiscal = false, cpfCnpjNota = null, form
     }
 
     vendaEmProcessamento = true;
+
+    const formaPagamentoNormalizada = String(formaPagamento || '').toLowerCase().trim();
+
+    const formasTEF = [
+        'cartao',
+        'cartão',
+        'cartao_credito',
+        'cartão_credito',
+        'cartao_debito',
+        'cartão_debito',
+        'credito',
+        'crédito',
+        'debito',
+        'débito',
+        'pix',
+        'pix_tef',
+        'tef'
+    ];
+
+    const precisaTEF =
+        formasTEF.includes(formaPagamentoNormalizada) &&
+        (!Array.isArray(pagamentosMistos) || pagamentosMistos.length === 0);
+
+    console.log('PRECISA TEF?', precisaTEF, {
+        formaPagamento,
+        formaPagamentoNormalizada,
+        pagamentosMistos
+    });
+
+    if (precisaTEF) {
+        const parcelasTef = formaPagamentoNormalizada.includes('credito') || formaPagamentoNormalizada.includes('crédito')
+            ? (Number($('#parcelasCartao').val()) || 1)
+            : 1;
+
+        const retornoTef = await processarPagamentoTEF(formaPagamentoNormalizada, total, parcelasTef);
+
+        if (!retornoTef || !retornoTef.aprovado) {
+            vendaEmProcessamento = false;
+            showNotification('Venda cancelada: pagamento TEF não aprovado.', 'warning');
+            return;
+        }
+
+        dados.tef = {
+            transacao_id: retornoTef.transacao_id,
+            provedor: retornoTef.provedor,
+            adquirente: retornoTef.adquirente,
+            bandeira: retornoTef.bandeira,
+            nsu: retornoTef.nsu,
+            autorizacao: retornoTef.autorizacao,
+            codigo_transacao: retornoTef.codigo_transacao,
+            comprovante_cliente: retornoTef.comprovante_cliente,
+            comprovante_estabelecimento: retornoTef.comprovante_estabelecimento,
+
+            // futuramente será o CNPJ real da credenciadora/TEF
+            cnpj_credenciadora: retornoTef.cnpj_credenciadora || '01425787000104'
+        };
+
+        dados.pagamentos = [
+            {
+                forma_pagamento: formaPagamento,
+                valor: total,
+                tef_transacao_id: retornoTef.transacao_id,
+                tef: dados.tef,
+                nsu: retornoTef.nsu,
+                autorizacao: retornoTef.autorizacao,
+                bandeira: retornoTef.bandeira,
+                adquirente: retornoTef.adquirente
+            }
+        ];
+    }
 
     const itensParaCupom = dados.itens.map(item => {
         const produto = produtosDisponiveis.find(p => Number(p.id) === Number(item.produto_id));

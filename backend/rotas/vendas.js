@@ -103,9 +103,9 @@ router.get('/', (req, res) => {
   }
 
   if (!todas) {
-    const dataHoje = agoraLocalBrasil().split(' ')[0];
+    const dataHoje = agoraLocalBrasil().slice(0, 10);
     where += (where ? ' AND ' : ' WHERE ');
-    where += ` DATE(v.created_at) = ? `;
+    where += ` v.data_venda = ? `;
     params.push(dataHoje);
   }
 
@@ -129,7 +129,7 @@ router.get('/', (req, res) => {
     FROM vendas v
     LEFT JOIN clientes c ON c.id = v.cliente_id
     ${where}
-    ORDER BY datetime(v.created_at) DESC, v.id DESC
+    ORDER BY v.data_venda DESC, v.id DESC
   `, params, (err, rows) => {
     if (err) {
       console.error('Erro ao listar vendas:', err);
@@ -222,7 +222,8 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
     emitir_fiscal,
     valor_recebido,
     cpf_cnpj_nota,
-    pagamentos
+    pagamentos,
+    tef
   } = req.body;
 
   const cpfCnpjNotaLimpo = String(cpf_cnpj_nota || '').replace(/\D/g, '');
@@ -376,6 +377,37 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
             return;
           }
           const vendaId = this.lastID;
+
+          // Armazenar TEF se existir
+          if (tef && tef.transacao_id) {
+            db.run(`
+              INSERT INTO tef_transacoes (
+                venda_id, tipo, valor, parcelas, status, provedor, adquirente,
+                bandeira, nsu, autorizacao, codigo_transacao,
+                comprovante_cliente, comprovante_estabelecimento, payload_retorno
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              vendaId,
+              tef.tipo || 'cartao_credito',
+              tef.valor || total,
+              tef.parcelas || 1,
+              tef.status || 'aprovado',
+              tef.provedor || 'SITEF',
+              tef.adquirente || '',
+              tef.bandeira || '',
+              tef.nsu || '',
+              tef.autorizacao || '',
+              tef.codigo_transacao || '',
+              tef.comprovante_cliente || '',
+              tef.comprovante_estabelecimento || '',
+              JSON.stringify(tef.payload_retorno || {})
+            ], (tefErr) => {
+              if (tefErr) {
+                console.error('Erro ao salvar TEF:', tefErr);
+              }
+            });
+          }
+
           let itensProcessados = 0;
           itens.forEach(item => {
             db.run(`
@@ -532,6 +564,37 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
           return;
         }
         const vendaId = this.lastID;
+
+        // Armazenar TEF se existir
+        if (tef && tef.transacao_id) {
+          db.run(`
+            INSERT INTO tef_transacoes (
+              venda_id, tipo, valor, parcelas, status, provedor, adquirente,
+              bandeira, nsu, autorizacao, codigo_transacao,
+              comprovante_cliente, comprovante_estabelecimento, payload_retorno
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            vendaId,
+            tef.tipo || 'cartao_credito',
+            tef.valor || total,
+            tef.parcelas || 1,
+            tef.status || 'aprovado',
+            tef.provedor || 'SITEF',
+            tef.adquirente || '',
+            tef.bandeira || '',
+            tef.nsu || '',
+            tef.autorizacao || '',
+            tef.codigo_transacao || '',
+            tef.comprovante_cliente || '',
+            tef.comprovante_estabelecimento || '',
+            JSON.stringify(tef.payload_retorno || {})
+          ], (tefErr) => {
+            if (tefErr) {
+              console.error('Erro ao salvar TEF:', tefErr);
+            }
+          });
+        }
+
         let itensProcessados = 0;
         itens.forEach(item => {
           db.run(`

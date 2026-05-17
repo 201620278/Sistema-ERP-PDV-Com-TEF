@@ -126,6 +126,7 @@ const fornecedoresRoutes = require('./rotas/fornecedores');
 const impressaoRoutes = require('./rotas/impressao');
 const caixaRoutes = require('./rotas/caixa');
 const backupRoutes = require('./rotas/backup');
+const tefRoutes = require('./rotas/tef');
 // const usuariosRoutes = require('./rotas/usuarios');
 
 app.use('/api/produtos', verificarToken, produtosRoutes);
@@ -141,6 +142,7 @@ app.use('/api/fornecedores', verificarToken, fornecedoresRoutes);
 app.use('/api/impressao', verificarToken, impressaoRoutes);
 app.use('/api/caixa', verificarToken, caixaRoutes);
 app.use('/api/backup', verificarToken, backupRoutes);
+app.use('/api/tef', tefRoutes);
 // app.use('/api/usuarios', verificarToken, usuariosRoutes);
 
 // Rota principal (protegida)

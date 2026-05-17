@@ -172,6 +172,50 @@ function aplicarAlteracoesPosCriacao() {
 
 function criarTabelas() {
   db.serialize(() => {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS tef_transacoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        venda_id INTEGER,
+        tipo TEXT NOT NULL,
+        valor DECIMAL(10,2) NOT NULL,
+        parcelas INTEGER DEFAULT 1,
+        status TEXT DEFAULT 'pendente',
+        provedor TEXT DEFAULT 'SITEF',
+        adquirente TEXT,
+        bandeira TEXT,
+        nsu TEXT,
+        autorizacao TEXT,
+        codigo_transacao TEXT,
+        comprovante_cliente TEXT,
+        comprovante_estabelecimento TEXT,
+        payload_retorno TEXT,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS tef_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        transacao_id INTEGER,
+        tipo TEXT,
+        mensagem TEXT,
+        payload TEXT,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS tef_configuracoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chave TEXT UNIQUE NOT NULL,
+        valor TEXT,
+        descricao TEXT,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Tabela de categorias
     db.run(`
       CREATE TABLE IF NOT EXISTS categorias (

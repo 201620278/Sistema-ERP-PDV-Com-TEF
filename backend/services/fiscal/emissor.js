@@ -56,7 +56,24 @@ function carregarVenda(vendaId) {
           (pgErr, pagamentos) => {
             if (pgErr) return reject(pgErr);
             venda.pagamentos = pagamentos || [];
-            resolve({ venda, itens });
+
+            // Carregar dados TEF se existirem
+            db.get(
+              "SELECT * FROM tef_transacoes WHERE venda_id = ? LIMIT 1",
+              [vendaId],
+              (tefErr, tef) => {
+                if (tefErr) {
+                  console.error('Erro ao carregar TEF:', tefErr);
+                }
+                if (tef) {
+                  console.log('TEF carregado do banco:', tef);
+                  venda.tef = tef;
+                } else {
+                  console.log('Nenhum TEF encontrado para venda:', vendaId);
+                }
+                resolve({ venda, itens });
+              }
+            );
           }
         );
       });

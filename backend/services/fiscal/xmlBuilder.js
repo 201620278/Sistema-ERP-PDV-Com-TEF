@@ -51,7 +51,7 @@ function mapearFormaPagamento(forma) {
   return mapa[forma] || '99';
 }
 
-function montarPagamentos(pagamentos) {
+function montarPagamentos(pagamentos, dadosVenda = {}) {
   let xml = '<pag>';
 
   pagamentos.forEach(p => {
@@ -64,7 +64,50 @@ function montarPagamentos(pagamentos) {
         <vPag>${Number(p.valor).toFixed(2)}</vPag>
     `;
 
-    if (tPag === '03' || tPag === '04' || tPag === '17') {
+    const tef = p.tef || dadosVenda.tef || null;
+
+    if (tef && ['03', '04', '17'].includes(tPag)) {
+      xml += `
+        <card>
+          <tpIntegra>1</tpIntegra>
+      `;
+
+      const cnpjCredenciadora = onlyDigits(
+        (tef && tef.cnpj_credenciadora) ||
+        (tef && tef.cnpjCredenciadora) ||
+        '01425787000104'
+      );
+
+      if (cnpjCredenciadora && cnpjCredenciadora.length === 14) {
+        xml += `<CNPJ>${cnpjCredenciadora}</CNPJ>`;
+      }
+
+      if (tPag === '03' || tPag === '04') {
+        const bandeira = String(tef.bandeira || p.bandeira || '').toUpperCase();
+
+        let tBand = '99';
+
+        if (bandeira.includes('VISA')) tBand = '01';
+        else if (bandeira.includes('MASTERCARD') || bandeira.includes('MASTER')) tBand = '02';
+        else if (bandeira.includes('AMEX')) tBand = '03';
+        else if (bandeira.includes('SOROCRED')) tBand = '04';
+        else if (bandeira.includes('DINERS')) tBand = '05';
+        else if (bandeira.includes('ELO')) tBand = '06';
+        else if (bandeira.includes('HIPER')) tBand = '07';
+        else if (bandeira.includes('AURA')) tBand = '08';
+        else if (bandeira.includes('CABAL')) tBand = '09';
+
+        xml += `<tBand>${tBand}</tBand>`;
+      }
+
+      const autorizacao = tef.autorizacao || p.autorizacao || tef.nsu || p.nsu;
+
+      if (autorizacao) {
+        xml += `<cAut>${String(autorizacao).substring(0, 20)}</cAut>`;
+      }
+
+      xml += `</card>`;
+    } else if (['03', '04', '17'].includes(tPag)) {
       xml += `
         <card>
           <tpIntegra>2</tpIntegra>
@@ -359,7 +402,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
     ? venda.pagamentos
     : [{ forma_pagamento: venda.forma_pagamento || 'outro', valor: vNF }];
 
-  const pag = montarPagamentos(pagamentosVenda);
+  const pag = montarPagamentos(pagamentosVenda, venda);
 
   console.log('PAGAMENTO NFCe:', pag);
 
