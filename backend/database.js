@@ -216,6 +216,30 @@ function criarTabelas() {
       )
     `);
 
+    // Adicionar colunas TEF à tabela venda_pagamentos
+    db.all(`PRAGMA table_info(venda_pagamentos)`, (err, columns) => {
+      if (err) return console.error('Erro ao verificar venda_pagamentos:', err.message);
+
+      const nomes = columns.map(c => c.name);
+
+      function addColuna(nome, tipo) {
+        if (!nomes.includes(nome)) {
+          db.run(`ALTER TABLE venda_pagamentos ADD COLUMN ${nome} ${tipo}`, (e) => {
+            if (e) console.error(`Erro ao adicionar coluna ${nome}:`, e.message);
+            else console.log(`Coluna ${nome} adicionada em venda_pagamentos`);
+          });
+        }
+      }
+
+      addColuna('tef_transacao_id', 'INTEGER');
+      addColuna('tef_nsu', 'TEXT');
+      addColuna('tef_autorizacao', 'TEXT');
+      addColuna('tef_bandeira', 'TEXT');
+      addColuna('tef_adquirente', 'TEXT');
+      addColuna('tef_comprovante_cliente', 'TEXT');
+      addColuna('tef_comprovante_estabelecimento', 'TEXT');
+    });
+
     // Tabela de categorias
     db.run(`
       CREATE TABLE IF NOT EXISTS categorias (

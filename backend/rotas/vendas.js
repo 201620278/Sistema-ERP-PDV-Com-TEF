@@ -378,32 +378,18 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
           }
           const vendaId = this.lastID;
 
-          // Armazenar TEF se existir
+          // Vincular transação TEF existente à venda
           if (tef && tef.transacao_id) {
             db.run(`
-              INSERT INTO tef_transacoes (
-                venda_id, tipo, valor, parcelas, status, provedor, adquirente,
-                bandeira, nsu, autorizacao, codigo_transacao,
-                comprovante_cliente, comprovante_estabelecimento, payload_retorno
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              UPDATE tef_transacoes
+              SET venda_id = ?
+              WHERE id = ?
             `, [
               vendaId,
-              tef.tipo || 'cartao_credito',
-              tef.valor || total,
-              tef.parcelas || 1,
-              tef.status || 'aprovado',
-              tef.provedor || 'SITEF',
-              tef.adquirente || '',
-              tef.bandeira || '',
-              tef.nsu || '',
-              tef.autorizacao || '',
-              tef.codigo_transacao || '',
-              tef.comprovante_cliente || '',
-              tef.comprovante_estabelecimento || '',
-              JSON.stringify(tef.payload_retorno || {})
+              tef.transacao_id
             ], (tefErr) => {
               if (tefErr) {
-                console.error('Erro ao salvar TEF:', tefErr);
+                console.error('Erro ao vincular TEF à venda:', tefErr);
               }
             });
           }
@@ -433,15 +419,26 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
                 if (itensProcessados === itens.length) {
                   if (pagamentosVenda.length > 0) {
                     const stmtPagamentos = db.prepare(`
-                      INSERT INTO venda_pagamentos (venda_id, forma_pagamento, valor)
-                      VALUES (?, ?, ?)
+                      INSERT INTO venda_pagamentos (
+                        venda_id, forma_pagamento, valor,
+                        tef_transacao_id, tef_nsu, tef_autorizacao,
+                        tef_bandeira, tef_adquirente,
+                        tef_comprovante_cliente, tef_comprovante_estabelecimento
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     `);
 
                     pagamentosVenda.forEach((p) => {
                       stmtPagamentos.run(
                         vendaId,
                         p.forma_pagamento,
-                        Number(p.valor || 0)
+                        Number(p.valor || 0),
+                        p.tef_transacao_id || p.tef?.transacao_id || null,
+                        p.nsu || p.tef?.nsu || null,
+                        p.autorizacao || p.tef?.autorizacao || null,
+                        p.bandeira || p.tef?.bandeira || null,
+                        p.adquirente || p.tef?.adquirente || null,
+                        p.tef?.comprovante_cliente || null,
+                        p.tef?.comprovante_estabelecimento || null
                       );
                     });
 
@@ -449,10 +446,25 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
                   } else {
                     db.run(
                       `
-                      INSERT INTO venda_pagamentos (venda_id, forma_pagamento, valor)
-                      VALUES (?, ?, ?)
+                      INSERT INTO venda_pagamentos (
+                        venda_id, forma_pagamento, valor,
+                        tef_transacao_id, tef_nsu, tef_autorizacao,
+                        tef_bandeira, tef_adquirente,
+                        tef_comprovante_cliente, tef_comprovante_estabelecimento
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                       `,
-                      [vendaId, formaPagamentoFinal, Number(total || 0)]
+                      [
+                        vendaId,
+                        formaPagamentoFinal,
+                        Number(total || 0),
+                        tef?.transacao_id || null,
+                        tef?.nsu || null,
+                        tef?.autorizacao || null,
+                        tef?.bandeira || null,
+                        tef?.adquirente || null,
+                        tef?.comprovante_cliente || null,
+                        tef?.comprovante_estabelecimento || null
+                      ]
                     );
                   }
 
@@ -565,32 +577,18 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
         }
         const vendaId = this.lastID;
 
-        // Armazenar TEF se existir
+        // Vincular transação TEF existente à venda
         if (tef && tef.transacao_id) {
           db.run(`
-            INSERT INTO tef_transacoes (
-              venda_id, tipo, valor, parcelas, status, provedor, adquirente,
-              bandeira, nsu, autorizacao, codigo_transacao,
-              comprovante_cliente, comprovante_estabelecimento, payload_retorno
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            UPDATE tef_transacoes
+            SET venda_id = ?
+            WHERE id = ?
           `, [
             vendaId,
-            tef.tipo || 'cartao_credito',
-            tef.valor || total,
-            tef.parcelas || 1,
-            tef.status || 'aprovado',
-            tef.provedor || 'SITEF',
-            tef.adquirente || '',
-            tef.bandeira || '',
-            tef.nsu || '',
-            tef.autorizacao || '',
-            tef.codigo_transacao || '',
-            tef.comprovante_cliente || '',
-            tef.comprovante_estabelecimento || '',
-            JSON.stringify(tef.payload_retorno || {})
+            tef.transacao_id
           ], (tefErr) => {
             if (tefErr) {
-              console.error('Erro ao salvar TEF:', tefErr);
+              console.error('Erro ao vincular TEF à venda:', tefErr);
             }
           });
         }
@@ -620,15 +618,26 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
               if (itensProcessados === itens.length) {
                 if (pagamentosVenda.length > 0) {
                   const stmtPagamentos = db.prepare(`
-                    INSERT INTO venda_pagamentos (venda_id, forma_pagamento, valor)
-                    VALUES (?, ?, ?)
+                    INSERT INTO venda_pagamentos (
+                      venda_id, forma_pagamento, valor,
+                      tef_transacao_id, tef_nsu, tef_autorizacao,
+                      tef_bandeira, tef_adquirente,
+                      tef_comprovante_cliente, tef_comprovante_estabelecimento
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                   `);
 
                   pagamentosVenda.forEach((p) => {
                     stmtPagamentos.run(
                       vendaId,
                       p.forma_pagamento,
-                      Number(p.valor || 0)
+                      Number(p.valor || 0),
+                      p.tef_transacao_id || p.tef?.transacao_id || null,
+                      p.nsu || p.tef?.nsu || null,
+                      p.autorizacao || p.tef?.autorizacao || null,
+                      p.bandeira || p.tef?.bandeira || null,
+                      p.adquirente || p.tef?.adquirente || null,
+                      p.tef?.comprovante_cliente || null,
+                      p.tef?.comprovante_estabelecimento || null
                     );
                   });
 
@@ -636,10 +645,25 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
                 } else {
                   db.run(
                     `
-                    INSERT INTO venda_pagamentos (venda_id, forma_pagamento, valor)
-                    VALUES (?, ?, ?)
+                    INSERT INTO venda_pagamentos (
+                      venda_id, forma_pagamento, valor,
+                      tef_transacao_id, tef_nsu, tef_autorizacao,
+                      tef_bandeira, tef_adquirente,
+                      tef_comprovante_cliente, tef_comprovante_estabelecimento
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     `,
-                    [vendaId, formaPagamentoFinal, Number(total || 0)]
+                    [
+                      vendaId,
+                      formaPagamentoFinal,
+                      Number(total || 0),
+                      tef?.transacao_id || null,
+                      tef?.nsu || null,
+                      tef?.autorizacao || null,
+                      tef?.bandeira || null,
+                      tef?.adquirente || null,
+                      tef?.comprovante_cliente || null,
+                      tef?.comprovante_estabelecimento || null
+                    ]
                   );
                 }
 
