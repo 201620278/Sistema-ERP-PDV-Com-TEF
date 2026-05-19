@@ -9,7 +9,7 @@ const {
 const { gerarQRCodeNFCe } = require('./qrcode');
 const { assinarNFe } = require('./signer');
 const { montarLote, enviarLote } = require('./soapClient');
-const { compactarXml } = require('./utils');
+const { compactarXml, extrairChaveEProtocoloAutorizados } = require('./utils');
 const { validarItensFiscal } = require('./validadorFiscal');
 const { gerarDanfeHtml } = require('./danfe');
 const { getFiscalSubDir } = require('./paths');
@@ -380,6 +380,7 @@ async function emitirPorVendaId(vendaId) {
   let status = assinaturaErro ? 'configuracao_pendente' : 'pendente';
   let xmlRetorno = assinaturaErro ? assinaturaErro.message : null;
   let soapResponse = null;
+  let chaveAutorizada = xmlBase.chave;
 
   if (!assinaturaErro) {
     const loteXml = montarLote(xmlAssinadoFinal, String(numero));
@@ -401,9 +402,16 @@ async function emitirPorVendaId(vendaId) {
     if (raw.includes('<cStat>100</cStat>')) {
       status = 'autorizada';
 
+      const authSefaz = extrairChaveEProtocoloAutorizados(raw);
+      if (authSefaz?.chaveAcesso) {
+        chaveAutorizada = authSefaz.chaveAcesso;
+      }
+
       const protMatch = raw.match(/<nProt>(.*?)<\/nProt>/);
       if (protMatch) {
         soapResponse.protocolo = protMatch[1];
+      } else if (authSefaz?.protocolo) {
+        soapResponse.protocolo = authSefaz.protocolo;
       }
     } else if (raw.includes('<cStat>539</cStat>')) {
       status = 'rejeitada_duplicidade';
@@ -432,7 +440,7 @@ async function emitirPorVendaId(vendaId) {
     venda_id: vendaId,
     numero,
     serie: config.serie,
-    chave_acesso: xmlBase.chave,
+    chave_acesso: chaveAutorizada,
     ambiente: config.ambiente,
     status,
     xml_enviado: xmlAssinadoFinal,
@@ -447,7 +455,7 @@ async function emitirPorVendaId(vendaId) {
     notaId,
     status,
     numero,
-    chaveAcesso: xmlBase.chave,
+    chaveAcesso: chaveAutorizada,
     qrCodeUrl,
     danfeHtml,
     soap: soapResponse

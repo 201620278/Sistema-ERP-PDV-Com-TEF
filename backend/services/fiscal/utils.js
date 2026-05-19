@@ -114,6 +114,26 @@ function limparCertificadoBase64(certBase64) {
     .trim();
 }
 
+function extrairChaveEProtocoloAutorizados(xmlRetorno) {
+  const texto = String(xmlRetorno || '');
+  if (!texto.includes('<cStat>100</cStat>')) return null;
+
+  const matchChave = texto.match(/<chNFe>(\d{44})<\/chNFe>[\s\S]{0,800}?<cStat>100<\/cStat>/i);
+  if (!matchChave) return null;
+
+  const chaveAcesso = matchChave[1];
+  const bloco = matchChave[0];
+  const protNoBloco = bloco.match(/<nProt>(\d+)<\/nProt>/i);
+  const protGlobal = texto.match(
+    new RegExp(`<chNFe>${chaveAcesso}</chNFe>[\\s\\S]{0,400}?<nProt>(\\d+)</nProt>`, 'i')
+  );
+
+  return {
+    chaveAcesso,
+    protocolo: (protNoBloco && protNoBloco[1]) || (protGlobal && protGlobal[1]) || null
+  };
+}
+
 module.exports = {
   onlyDigits,
   padLeft,
@@ -127,5 +147,6 @@ module.exports = {
   xmlEscape,
   compactarXml,
   normalizarXmlParaSefaz,
-  limparCertificadoBase64
+  limparCertificadoBase64,
+  extrairChaveEProtocoloAutorizados
 };

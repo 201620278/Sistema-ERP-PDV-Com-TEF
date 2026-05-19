@@ -131,4 +131,27 @@ router.get('/venda/:vendaId/resumo', (req, res) => {
   });
 });
 
+router.post('/cancelar', async (req, res) => {
+  try {
+    const { transacao_id, motivo } = req.body;
+
+    if (!transacao_id) {
+      return res.status(400).json({ error: 'transacao_id é obrigatório.' });
+    }
+
+    const resultado = await tefService.cancelarPagamento(
+      Number(transacao_id),
+      motivo || 'Cancelamento da venda'
+    );
+
+    res.json(resultado);
+
+  } catch (error) {
+    console.error('Erro ao cancelar TEF:', error);
+    res.status(500).json({
+      error: error.message || 'Erro ao cancelar TEF.'
+    });
+  }
+});
+
 module.exports = router;

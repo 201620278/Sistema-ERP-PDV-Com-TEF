@@ -35,6 +35,27 @@ function autorizarPagamento(dados) {
   });
 }
 
+function cancelarPagamento(dados) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({
+        cancelado: true,
+        status: 'cancelado',
+        mensagem: 'Transação TEF cancelada com sucesso',
+        nsu: dados.nsu,
+        autorizacao: dados.autorizacao,
+        codigo_cancelamento: `CANC${Date.now()}`,
+        payload_retorno: {
+          ambiente: 'simulacao',
+          transacao_id: dados.transacao_id,
+          motivo: dados.motivo || 'Cancelamento da venda'
+        }
+      });
+    }, 1000);
+  });
+}
+
 module.exports = {
-  autorizarPagamento
+  autorizarPagamento,
+  cancelarPagamento
 };

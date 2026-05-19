@@ -1,7 +1,8 @@
+const db = require('../../database');
 const { getFiscalConfig } = require('./configService');
 const { assinarEvento } = require('./signer');
 const { carregarCertificadoPfx } = require('./certificateService');
-const { compactarXml } = require('./utils');
+const { compactarXml, extrairChaveEProtocoloAutorizados } = require('./utils');
 const axios = require('axios');
 const https = require('https');
 
@@ -15,15 +16,66 @@ function getUrlRecepcaoEvento(config) {
   return 'https://nfce-homologacao.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx';
 }
 
-async function cancelarNfce(nota, justificativa) {
+async function cancelarNfce(vendaId, justificativa) {
   const config = await getFiscalConfig();
 
-  if (!nota.chave || !nota.protocolo) {
-    throw new Error('Nota não possui chave ou protocolo.');
+  if (!vendaId) {
+    throw new Error('venda_id é obrigatório para cancelar NFC-e.');
   }
 
   if (!justificativa || justificativa.trim().length < 15) {
     throw new Error('Justificativa deve ter no mínimo 15 caracteres.');
+  }
+
+  const notaAutorizada = await new Promise((resolve, reject) => {
+    db.get(`
+      SELECT *
+      FROM nfce_notas
+      WHERE venda_id = ?
+        AND status IN ('autorizada', 'cancelamento_rejeitado')
+        AND (
+          (chave_acesso IS NOT NULL AND chave_acesso <> '')
+          OR (xml_retorno IS NOT NULL AND xml_retorno LIKE '%<cStat>100</cStat>%')
+        )
+      ORDER BY id DESC
+      LIMIT 1
+    `, [vendaId], (err, row) => {
+      if (err) return reject(err);
+      resolve(row);
+    });
+  });
+
+  if (!notaAutorizada) {
+    throw new Error('Nenhuma NFC-e autorizada encontrada para cancelar.');
+  }
+
+  const authSefaz = extrairChaveEProtocoloAutorizados(notaAutorizada.xml_retorno);
+  const chaveAcesso = authSefaz?.chaveAcesso || notaAutorizada.chave_acesso;
+  const protocolo = authSefaz?.protocolo || notaAutorizada.protocolo;
+
+  if (!chaveAcesso || !protocolo) {
+    throw new Error('NFC-e autorizada sem chave ou protocolo.');
+  }
+
+  if (authSefaz?.chaveAcesso && authSefaz.chaveAcesso !== notaAutorizada.chave_acesso) {
+    console.warn(
+      `[CANCELAMENTO] Corrigindo chave no banco: ${notaAutorizada.chave_acesso} -> ${authSefaz.chaveAcesso}`
+    );
+
+    await new Promise((resolve, reject) => {
+      db.run(`
+        UPDATE nfce_notas
+        SET
+          chave_acesso = ?,
+          protocolo = COALESCE(?, protocolo),
+          status = 'autorizada',
+          updated_at = datetime('now', 'localtime')
+        WHERE id = ?
+      `, [authSefaz.chaveAcesso, authSefaz.protocolo, notaAutorizada.id], (updateErr) => {
+        if (updateErr) return reject(updateErr);
+        resolve();
+      });
+    });
   }
 
   function formatarDataHoraEvento(date = new Date()) {
@@ -45,18 +97,18 @@ async function cancelarNfce(nota, justificativa) {
 
   const eventoXml = `
     <evento versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfe">
-      <infEvento Id="ID110111${nota.chave}${nSeqEvento.padStart(2, '0')}">
+      <infEvento Id="ID110111${chaveAcesso}${nSeqEvento.padStart(2, '0')}">
         <cOrgao>${config.codigoUf}</cOrgao>
         <tpAmb>${config.ambiente}</tpAmb>
         <CNPJ>${String(config.cnpj || '').replace(/\D/g, '')}</CNPJ>
-        <chNFe>${nota.chave}</chNFe>
+        <chNFe>${chaveAcesso}</chNFe>
         <dhEvento>${dataEvento}</dhEvento>
         <tpEvento>110111</tpEvento>
         <nSeqEvento>${nSeqEvento}</nSeqEvento>
         <verEvento>1.00</verEvento>
         <detEvento versao="1.00">
           <descEvento>Cancelamento</descEvento>
-          <nProt>${nota.protocolo}</nProt>
+          <nProt>${protocolo}</nProt>
           <xJust>${justificativa.trim()}</xJust>
         </detEvento>
       </infEvento>
@@ -123,7 +175,12 @@ async function cancelarNfce(nota, justificativa) {
     }
   });
 
-  return response.data;
+  return {
+    sefaz: response.data,
+    notaId: notaAutorizada.id,
+    chaveAcesso,
+    protocolo
+  };
 }
 
 module.exports = cancelarNfce;

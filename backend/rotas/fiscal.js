@@ -236,46 +236,52 @@ router.post('/notas/:id/cancelar', async (req, res) => {
         return res.status(404).json({ error: 'NFC-e não encontrada.' });
       }
 
-      if (String(nota.status || '').toLowerCase() === 'cancelada') {
+      if (!nota.venda_id) {
         return res.status(400).json({
-          error: 'Esta NFC-e já está cancelada.'
+          error: 'NFC-e sem venda vinculada. Não é possível cancelar.'
         });
       }
 
-      if (!String(nota.status || '').toLowerCase().includes('autoriz')) {
-        return res.status(400).json({
-          error: 'Somente NFC-e autorizada pode ser cancelada.'
-        });
-      }
+      db.get(`
+        SELECT id, status
+        FROM nfce_notas
+        WHERE venda_id = ?
+          AND status IN ('autorizada', 'cancelamento_rejeitado')
+          AND (
+            (chave_acesso IS NOT NULL AND chave_acesso <> '')
+            OR (xml_retorno IS NOT NULL AND xml_retorno LIKE '%<cStat>100</cStat>%')
+          )
+        ORDER BY id DESC
+        LIMIT 1
+      `, [nota.venda_id], async (authErr, notaAutorizada) => {
+        if (authErr) {
+          return res.status(500).json({ error: authErr.message });
+        }
 
-      if (!nota.chave_acesso || !nota.protocolo) {
-        return res.status(400).json({
-          error: 'NFC-e sem chave ou protocolo. Não é possível cancelar.'
-        });
-      }
+        if (!notaAutorizada) {
+          return res.status(400).json({
+            error: 'Nenhuma NFC-e autorizada encontrada para esta venda.'
+          });
+        }
 
-      try {
-        const retorno = await cancelarNfce({
-          chave: nota.chave_acesso,
-          protocolo: nota.protocolo
-        }, justificativa.trim());
+        try {
+          const cancelamento = await cancelarNfce(nota.venda_id, justificativa.trim());
+          const notaIdAutorizada = cancelamento.notaId;
 
-        const retornoTexto = typeof retorno === 'string'
-          ? retorno
-          : JSON.stringify(retorno);
+          const retornoTexto = typeof cancelamento.sefaz === 'string'
+            ? cancelamento.sefaz
+            : JSON.stringify(cancelamento.sefaz);
 
-        const dadosCancelamento = extrairCancelamentoSefaz(retornoTexto);
+          const dadosCancelamento = extrairCancelamentoSefaz(retornoTexto);
 
-        const canceladoComSucesso =
-          String(dadosCancelamento.cStatEvento) === '135' ||
-          String(dadosCancelamento.cStatEvento) === '136' ||
-          String(dadosCancelamento.cStatEvento) === '155';
+          const canceladoComSucesso =
+            String(dadosCancelamento.cStatEvento) === '135' ||
+            String(dadosCancelamento.cStatEvento) === '136' ||
+            String(dadosCancelamento.cStatEvento) === '155';
 
-        const novoStatus = canceladoComSucesso
-          ? 'cancelada'
-          : 'cancelamento_rejeitado';
+          const novoStatus = canceladoComSucesso ? 'cancelada' : 'autorizada';
 
-        const resumoCancelamento = `
+          const resumoCancelamento = `
 STATUS CANCELAMENTO: ${novoStatus}
 cStatEvento: ${dadosCancelamento.cStatEvento || ''}
 xMotivoEvento: ${dadosCancelamento.xMotivoEvento || ''}
@@ -284,42 +290,48 @@ dataCancelamento: ${dadosCancelamento.dataCancelamento || ''}
 justificativa: ${justificativa.trim()}
 `;
 
-        db.run(`
-          UPDATE nfce_notas
-          SET status = ?,
-              xml_retorno = COALESCE(xml_retorno, '') || char(10) || ? || char(10) || ?,
-              updated_at = datetime('now', 'localtime')
-          WHERE id = ?
-        `, [novoStatus, resumoCancelamento, retornoTexto, id], (updErr) => {
-          if (updErr) {
-            return res.status(500).json({ error: updErr.message });
-          }
+          db.run(`
+            UPDATE nfce_notas
+            SET status = ?,
+                xml_retorno = COALESCE(xml_retorno, '') || char(10) || ? || char(10) || ?,
+                updated_at = datetime('now', 'localtime')
+            WHERE id = ?
+          `, [novoStatus, resumoCancelamento, retornoTexto, notaIdAutorizada], (updErr) => {
+            if (updErr) {
+              return res.status(500).json({ error: updErr.message });
+            }
 
-          if (!canceladoComSucesso) {
-            return res.status(400).json({
-              success: false,
-              message: dadosCancelamento.xMotivoEvento || 'Cancelamento rejeitado pela SEFAZ.',
+            if (!canceladoComSucesso) {
+              const motivoRejeicao = dadosCancelamento.xMotivoEvento || 'Cancelamento rejeitado pela SEFAZ.';
+              return res.status(400).json({
+                success: false,
+                error: motivoRejeicao,
+                message: motivoRejeicao,
+                status: novoStatus,
+                chaveAcesso: cancelamento.chaveAcesso,
+                retorno: cancelamento.sefaz,
+                dadosCancelamento
+              });
+            }
+
+            res.json({
+              success: true,
+              message: 'NFC-e cancelada com sucesso.',
               status: novoStatus,
-              retorno,
+              notaId: notaIdAutorizada,
+              chaveAcesso: cancelamento.chaveAcesso,
+              protocoloCancelamento: dadosCancelamento.protocoloCancelamento,
+              dataCancelamento: dadosCancelamento.dataCancelamento,
+              retorno: cancelamento.sefaz,
               dadosCancelamento
             });
-          }
-
-          res.json({
-            success: true,
-            message: 'NFC-e cancelada com sucesso.',
-            status: novoStatus,
-            protocoloCancelamento: dadosCancelamento.protocoloCancelamento,
-            dataCancelamento: dadosCancelamento.dataCancelamento,
-            retorno,
-            dadosCancelamento
           });
-        });
-      } catch (cancelErr) {
-        res.status(500).json({
-          error: cancelErr.message
-        });
-      }
+        } catch (cancelErr) {
+          res.status(500).json({
+            error: cancelErr.message
+          });
+        }
+      });
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

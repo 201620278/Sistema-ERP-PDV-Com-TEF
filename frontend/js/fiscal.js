@@ -474,7 +474,7 @@ function renderTabelaFiscalNotas() {
                                     <i class="fas fa-eye"></i>
                                 </button>
 
-                                ${String(n.status || '').toLowerCase().includes('autoriz') ? `
+                                ${String(n.status || '').toLowerCase().includes('autoriz') || String(n.status || '').toLowerCase() === 'cancelamento_rejeitado' ? `
                                     <button class="btn btn-sm btn-danger ms-1" onclick="cancelarNfce(${n.id})" title="Cancelar NFC-e">
                                         <i class="fas fa-ban"></i>
                                     </button>
@@ -801,7 +801,8 @@ function cancelarNfce(id) {
                 carregarFiscalNotas();
             },
             error: function(xhr) {
-                showNotification(xhr.responseJSON?.error || 'Erro ao cancelar NFC-e.', 'danger');
+                const resp = xhr.responseJSON || {};
+                showNotification(resp.error || resp.message || 'Erro ao cancelar NFC-e.', 'danger');
             }
         });
     });
