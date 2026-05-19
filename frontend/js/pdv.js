@@ -2003,6 +2003,10 @@ function mostrarModalImpressaoFiscal(vendaId, fiscalResponse = {}) {
                                 Imprimir Cupom Fiscal
                             </button>
 
+                            <button class="btn btn-sm btn-secondary" onclick="verResumoVendaFiscalTEF(${vendaId})">
+                                Resumo
+                            </button>
+
                             <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
                                 Fechar
                             </button>
@@ -3366,3 +3370,33 @@ $(document).on('hidden.bs.modal', '.modal', function () {
         $('body').css('padding-right', '');
     }
 });
+
+async function verResumoVendaFiscalTEF(vendaId) {
+    try {
+        const response = await fetch(`${API_URL}/tef/venda/${vendaId}/resumo`);
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Erro ao buscar resumo da venda.');
+        }
+
+        const texto = `
+VENDA INTERNA: #${data.venda_id}
+NFC-e SEFAZ: ${data.nfce_numero ? '#' + data.nfce_numero : 'Não emitida'}
+STATUS NFC-e: ${data.nfce_status || 'Não informado'}
+CHAVE: ${data.nfce_chave || 'Não informada'}
+
+TEF:
+Adquirente: ${data.tef_adquirente || 'Não possui TEF'}
+Bandeira: ${data.tef_bandeira || '-'}
+NSU: ${data.tef_nsu || '-'}
+Autorização: ${data.tef_autorizacao || '-'}
+        `;
+
+        alert(texto);
+
+    } catch (error) {
+        console.error('Erro resumo venda:', error);
+        showNotification(error.message || 'Erro ao buscar resumo.', 'danger');
+    }
+}

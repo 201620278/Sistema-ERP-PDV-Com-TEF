@@ -83,28 +83,81 @@ function carregarVenda(vendaId) {
 
 function salvarNota(payload) {
   return new Promise((resolve, reject) => {
-    db.run(`
-      INSERT INTO nfce_notas (
-        venda_id, numero, serie, chave_acesso, ambiente, status,
-        xml_enviado, xml_retorno, protocolo, recibo, qr_code_url, danfe_html,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+    db.get(`
+      SELECT id
+      FROM nfce_notas
+      WHERE 
+        (chave_acesso = ? AND chave_acesso IS NOT NULL AND chave_acesso <> '')
+        OR (
+          venda_id = ?
+          AND numero = ?
+          AND serie = ?
+          AND ambiente = ?
+        )
+      ORDER BY id DESC
+      LIMIT 1
     `, [
+      payload.chave_acesso || '',
       payload.venda_id,
       payload.numero,
       payload.serie,
-      payload.chave_acesso,
-      payload.ambiente,
-      payload.status,
-      payload.xml_enviado || null,
-      payload.xml_retorno || null,
-      payload.protocolo || null,
-      payload.recibo || null,
-      payload.qr_code_url || null,
-      payload.danfe_html || null
-    ], function(err) {
-      if (err) return reject(err);
-      resolve(this.lastID);
+      payload.ambiente
+    ], (selectErr, existente) => {
+      if (selectErr) return reject(selectErr);
+
+      if (existente) {
+        db.run(`
+          UPDATE nfce_notas
+          SET
+            status = ?,
+            xml_enviado = ?,
+            xml_retorno = ?,
+            protocolo = ?,
+            recibo = ?,
+            qr_code_url = ?,
+            danfe_html = ?,
+            updated_at = datetime('now', 'localtime')
+          WHERE id = ?
+        `, [
+          payload.status,
+          payload.xml_enviado || null,
+          payload.xml_retorno || null,
+          payload.protocolo || null,
+          payload.recibo || null,
+          payload.qr_code_url || null,
+          payload.danfe_html || null,
+          existente.id
+        ], function(updateErr) {
+          if (updateErr) return reject(updateErr);
+          resolve(existente.id);
+        });
+
+        return;
+      }
+
+      db.run(`
+        INSERT INTO nfce_notas (
+          venda_id, numero, serie, chave_acesso, ambiente, status,
+          xml_enviado, xml_retorno, protocolo, recibo, qr_code_url, danfe_html,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+      `, [
+        payload.venda_id,
+        payload.numero,
+        payload.serie,
+        payload.chave_acesso,
+        payload.ambiente,
+        payload.status,
+        payload.xml_enviado || null,
+        payload.xml_retorno || null,
+        payload.protocolo || null,
+        payload.recibo || null,
+        payload.qr_code_url || null,
+        payload.danfe_html || null
+      ], function(err) {
+        if (err) return reject(err);
+        resolve(this.lastID);
+      });
     });
   });
 }
@@ -113,36 +166,56 @@ async function emitirPorVendaId(vendaId) {
   console.log('ENTROU NO EMISSOR FISCAL');
   const { venda, itens } = await carregarVenda(vendaId);
 
-  const existe = await new Promise((resolve, reject) => {
-    db.get(
-      `SELECT * FROM nfce_notas
-       WHERE venda_id = ?
-         AND status IN ("autorizada","pendente","soap_enviado","configuracao_pendente")
-       ORDER BY id DESC
-       LIMIT 1`,
-      [vendaId],
-      (err, row) => {
-        if (err) return reject(err);
-        resolve(row || null);
-      }
-    );
+  const notaAutorizada = await new Promise((resolve, reject) => {
+    db.get(`
+      SELECT *
+      FROM nfce_notas
+      WHERE venda_id = ?
+        AND status = 'autorizada'
+      ORDER BY id DESC
+      LIMIT 1
+    `, [vendaId], (err, row) => {
+      if (err) return reject(err);
+      resolve(row || null);
+    });
   });
 
-  if (existe) {
+  if (notaAutorizada) {
     return {
       reused: true,
-      status: existe.status,
-      notaId: existe.id,
-      numero: existe.numero,
-      chaveAcesso: existe.chave_acesso,
-      danfeHtml: existe.danfe_html
+      status: notaAutorizada.status,
+      notaId: notaAutorizada.id,
+      numero: notaAutorizada.numero,
+      chaveAcesso: notaAutorizada.chave_acesso,
+      danfeHtml: notaAutorizada.danfe_html
     };
   }
 
-  const config = await getFiscalConfig();
-  const numero = await incrementaNumeroFiscal();
+  const notaPendenteAnterior = await new Promise((resolve, reject) => {
+    db.get(`
+      SELECT *
+      FROM nfce_notas
+      WHERE venda_id = ?
+        AND status IN ('erro_transmissao', 'pendente', 'soap_enviado', 'rejeitada')
+      ORDER BY id DESC
+      LIMIT 1
+    `, [vendaId], (err, row) => {
+      if (err) return reject(err);
+      resolve(row || null);
+    });
+  });
 
-  console.log(`NÚMERO FISCAL GERADO: ${numero} (MAX no banco + 1)`);
+  const config = await getFiscalConfig();
+
+  let numero;
+
+  if (notaPendenteAnterior && notaPendenteAnterior.numero) {
+    numero = notaPendenteAnterior.numero;
+    console.log(`REUTILIZANDO NÚMERO FISCAL DA TENTATIVA ANTERIOR: ${numero}`);
+  } else {
+    numero = await incrementaNumeroFiscal();
+    console.log(`NÚMERO FISCAL GERADO: ${numero} (MAX no banco + 1)`);
+  }
 
   if (!config.nomeEmpresa || !config.cnpj || !config.ie) {
     const notaId = await salvarNota({

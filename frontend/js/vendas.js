@@ -103,6 +103,7 @@ function renderVendas(vendas) {
                                     <td>${rotuloStatusVenda(v.status)}</td>
                                     <td>
                                         <button class="btn btn-sm btn-info" onclick="viewVenda(${v.id})"><i class="fas fa-eye"></i></button>
+                                        <button class="btn btn-sm btn-secondary" title="Resumo Venda/NFC-e/TEF" onclick="verResumoVendaFiscalTEF(${v.id})">📄</button>
                                         ${v.status !== 'cancelada' ? `<button class="btn btn-sm btn-danger" onclick="cancelarVendaNaoFiscal(${v.id})"><i class="fas fa-times"></i></button>` : ''}
                                     </td>
                                 </tr>
@@ -324,4 +325,31 @@ function cancelarVendaNaoFiscal(vendaId) {
             );
         }
     });
+}
+
+async function verResumoVendaFiscalTEF(vendaId) {
+    try {
+        const response = await fetch(`${API_URL}/tef/venda/${vendaId}/resumo`);
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Erro ao buscar resumo da venda.');
+        }
+
+        alert(
+`VENDA INTERNA: #${data.venda_id}
+NFC-e SEFAZ: ${data.nfce_numero ? '#' + data.nfce_numero : 'Não emitida'}
+STATUS NFC-e: ${data.nfce_status || 'Não informado'}
+
+TEF:
+Adquirente: ${data.tef_adquirente || 'Não possui TEF'}
+Bandeira: ${data.tef_bandeira || '-'}
+NSU: ${data.tef_nsu || '-'}
+Autorização: ${data.tef_autorizacao || '-'}`
+        );
+
+    } catch (error) {
+        console.error('Erro resumo venda:', error);
+        showNotification(error.message || 'Erro ao buscar resumo.', 'danger');
+    }
 }
