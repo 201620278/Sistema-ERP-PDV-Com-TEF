@@ -78,4 +78,92 @@ router.post("/imprimir", async (req, res) => {
   }
 });
 
+router.post('/tef', async (req, res) => {
+  try {
+
+    const {
+      comprovante_cliente,
+      comprovante_estabelecimento
+    } = req.body;
+
+    if (!comprovante_cliente && !comprovante_estabelecimento) {
+      return res.status(400).json({
+        error: 'Nenhum comprovante TEF informado.'
+      });
+    }
+
+    const escpos = require('escpos');
+    escpos.USB = require('escpos-usb');
+
+    const device = new escpos.USB();
+
+    const printer = new escpos.Printer(device, {
+      encoding: 'GB18030'
+    });
+
+    device.open((err) => {
+
+      if (err) {
+        console.error('Erro impressora TEF:', err);
+
+        return res.status(500).json({
+          error: err.message
+        });
+      }
+
+      printer
+        .align('CT')
+        .style('B')
+        .size(1, 1)
+        .text('COMPROVANTE TEF')
+        .text('------------------------------')
+        .style('NORMAL')
+        .align('LT');
+
+      if (comprovante_cliente) {
+
+        printer
+          .text('VIA CLIENTE')
+          .text('------------------------------');
+
+        comprovante_cliente
+          .split('\n')
+          .forEach(linha => printer.text(linha));
+
+        printer.text(' ');
+      }
+
+      if (comprovante_estabelecimento) {
+
+        printer
+          .text('VIA ESTABELECIMENTO')
+          .text('------------------------------');
+
+        comprovante_estabelecimento
+          .split('\n')
+          .forEach(linha => printer.text(linha));
+      }
+
+      printer
+        .text(' ')
+        .text(' ')
+        .cut()
+        .close();
+
+      res.json({
+        success: true
+      });
+
+    });
+
+  } catch (error) {
+
+    console.error('Erro impressão TEF:', error);
+
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

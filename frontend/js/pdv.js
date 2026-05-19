@@ -91,6 +91,26 @@ async function processarPagamentoTEF(tipo, valor, parcelas = 1) {
 
         showNotification('Pagamento TEF aprovado.', 'success');
 
+        try {
+
+            await fetch(`${API_URL}/impressao/tef`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    comprovante_cliente: data.comprovante_cliente,
+                    comprovante_estabelecimento: data.comprovante_estabelecimento
+                })
+            });
+
+            console.log('Comprovante TEF enviado para impressão.');
+
+        } catch (printError) {
+
+            console.error('Erro impressão TEF:', printError);
+        }
+
         return data;
 
     } catch (error) {
