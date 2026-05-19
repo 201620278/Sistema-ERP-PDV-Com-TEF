@@ -100,6 +100,90 @@ async function processarPagamentoTEF(tipo, valor, parcelas = 1) {
     }
 }
 
+function normalizarFormaPagamentoTEF(forma) {
+    return String(forma || '')
+        .toLowerCase()
+        .trim()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+}
+
+function formaPagamentoUsaTEF(forma) {
+    const f = normalizarFormaPagamentoTEF(forma);
+
+    return [
+        'cartao',
+        'cartao_credito',
+        'cartao_debito',
+        'credito',
+        'debito',
+        'pix',
+        'pix_tef',
+        'tef'
+    ].includes(f);
+}
+
+function montarObjetoTEF(retornoTef) {
+    return {
+        transacao_id: retornoTef.transacao_id,
+        provedor: retornoTef.provedor,
+        adquirente: retornoTef.adquirente,
+        bandeira: retornoTef.bandeira,
+        nsu: retornoTef.nsu,
+        autorizacao: retornoTef.autorizacao,
+        codigo_transacao: retornoTef.codigo_transacao,
+        comprovante_cliente: retornoTef.comprovante_cliente,
+        comprovante_estabelecimento: retornoTef.comprovante_estabelecimento,
+        cnpj_credenciadora: retornoTef.cnpj_credenciadora || '01425787000104'
+    };
+}
+
+async function processarPagamentosMistosTEF(pagamentos) {
+    const pagamentosProcessados = [];
+
+    for (const pagamento of pagamentos) {
+        const formaNormalizada = normalizarFormaPagamentoTEF(pagamento.forma_pagamento);
+        const valorPagamento = Number(pagamento.valor || 0);
+
+        if (valorPagamento <= 0) {
+            continue;
+        }
+
+        if (!formaPagamentoUsaTEF(formaNormalizada)) {
+            pagamentosProcessados.push(pagamento);
+            continue;
+        }
+
+        const parcelasTef = formaNormalizada.includes('credito') ? 1 : 1;
+
+        const retornoTef = await processarPagamentoTEF(
+            formaNormalizada,
+            valorPagamento,
+            parcelasTef
+        );
+
+        if (!retornoTef || !retornoTef.aprovado) {
+            throw new Error(`Pagamento TEF não aprovado para ${pagamento.forma_pagamento}.`);
+        }
+
+        const tef = montarObjetoTEF(retornoTef);
+
+        pagamentosProcessados.push({
+            ...pagamento,
+            forma_pagamento: formaNormalizada,
+            valor: valorPagamento,
+            tef_transacao_id: retornoTef.transacao_id,
+            tef,
+            nsu: retornoTef.nsu,
+            autorizacao: retornoTef.autorizacao,
+            bandeira: retornoTef.bandeira,
+            adquirente: retornoTef.adquirente
+        });
+    }
+
+    return pagamentosProcessados;
+}
+
 function inicializarPDV() {
     const usuarioLogado = JSON.parse(localStorage.getItem('user') || '{}');
     const nomeOperador = usuarioLogado.nome || usuarioLogado.username || 'Usuário';
@@ -1659,74 +1743,70 @@ async function executarFinalizacaoVenda(emitirFiscal = false, cpfCnpjNota = null
 
     vendaEmProcessamento = true;
 
-    const formaPagamentoNormalizada = String(formaPagamento || '').toLowerCase().trim();
+    const formaPagamentoNormalizada = normalizarFormaPagamentoTEF(formaPagamento);
 
-    const formasTEF = [
-        'cartao',
-        'cartão',
-        'cartao_credito',
-        'cartão_credito',
-        'cartao_debito',
-        'cartão_debito',
-        'credito',
-        'crédito',
-        'debito',
-        'débito',
-        'pix',
-        'pix_tef',
-        'tef'
-    ];
+    const ehPagamentoMisto =
+        Array.isArray(pagamentosMistos) &&
+        pagamentosMistos.length > 0;
 
-    const precisaTEF =
-        formasTEF.includes(formaPagamentoNormalizada) &&
-        (!Array.isArray(pagamentosMistos) || pagamentosMistos.length === 0);
-
-    console.log('PRECISA TEF?', precisaTEF, {
+    console.log('VERIFICANDO TEF:', {
         formaPagamento,
         formaPagamentoNormalizada,
+        ehPagamentoMisto,
         pagamentosMistos
     });
 
-    if (precisaTEF) {
-        const parcelasTef = formaPagamentoNormalizada.includes('credito') || formaPagamentoNormalizada.includes('crédito')
-            ? (Number($('#parcelasCartao').val()) || 1)
-            : 1;
+    try {
+        if (ehPagamentoMisto) {
+            const pagamentosComTEF = await processarPagamentosMistosTEF(pagamentosMistos);
 
-        const retornoTef = await processarPagamentoTEF(formaPagamentoNormalizada, total, parcelasTef);
+            dados.pagamentos = pagamentosComTEF;
+            dados.forma_pagamento = 'misto';
 
-        if (!retornoTef || !retornoTef.aprovado) {
-            vendaEmProcessamento = false;
-            showNotification('Venda cancelada: pagamento TEF não aprovado.', 'warning');
-            return;
-        }
+            const primeiroTef = pagamentosComTEF.find(p => p.tef_transacao_id);
 
-        dados.tef = {
-            transacao_id: retornoTef.transacao_id,
-            provedor: retornoTef.provedor,
-            adquirente: retornoTef.adquirente,
-            bandeira: retornoTef.bandeira,
-            nsu: retornoTef.nsu,
-            autorizacao: retornoTef.autorizacao,
-            codigo_transacao: retornoTef.codigo_transacao,
-            comprovante_cliente: retornoTef.comprovante_cliente,
-            comprovante_estabelecimento: retornoTef.comprovante_estabelecimento,
-
-            // futuramente será o CNPJ real da credenciadora/TEF
-            cnpj_credenciadora: retornoTef.cnpj_credenciadora || '01425787000104'
-        };
-
-        dados.pagamentos = [
-            {
-                forma_pagamento: formaPagamento,
-                valor: total,
-                tef_transacao_id: retornoTef.transacao_id,
-                tef: dados.tef,
-                nsu: retornoTef.nsu,
-                autorizacao: retornoTef.autorizacao,
-                bandeira: retornoTef.bandeira,
-                adquirente: retornoTef.adquirente
+            if (primeiroTef && primeiroTef.tef) {
+                dados.tef = primeiroTef.tef;
             }
-        ];
+        } else if (formaPagamentoUsaTEF(formaPagamentoNormalizada)) {
+            const parcelasTef = formaPagamentoNormalizada.includes('credito')
+                ? (Number($('#parcelasCartao').val()) || 1)
+                : 1;
+
+            const retornoTef = await processarPagamentoTEF(
+                formaPagamentoNormalizada,
+                total,
+                parcelasTef
+            );
+
+            if (!retornoTef || !retornoTef.aprovado) {
+                vendaEmProcessamento = false;
+                showNotification('Venda cancelada: pagamento TEF não aprovado.', 'warning');
+                return;
+            }
+
+            const tef = montarObjetoTEF(retornoTef);
+
+            dados.tef = tef;
+
+            dados.pagamentos = [
+                {
+                    forma_pagamento: formaPagamentoNormalizada,
+                    valor: total,
+                    tef_transacao_id: retornoTef.transacao_id,
+                    tef,
+                    nsu: retornoTef.nsu,
+                    autorizacao: retornoTef.autorizacao,
+                    bandeira: retornoTef.bandeira,
+                    adquirente: retornoTef.adquirente
+                }
+            ];
+        }
+    } catch (error) {
+        vendaEmProcessamento = false;
+        console.error('Erro no TEF misto:', error);
+        showNotification(error.message || 'Venda cancelada: falha no TEF.', 'danger');
+        return;
     }
 
     const itensParaCupom = dados.itens.map(item => {

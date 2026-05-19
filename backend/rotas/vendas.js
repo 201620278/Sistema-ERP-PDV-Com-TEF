@@ -378,21 +378,33 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
           }
           const vendaId = this.lastID;
 
-          // Vincular transação TEF existente à venda
+          const transacoesTefParaVincular = [];
+
           if (tef && tef.transacao_id) {
+            transacoesTefParaVincular.push(tef.transacao_id);
+          }
+
+          pagamentosVenda.forEach((p) => {
+            const idTef = p.tef_transacao_id || p.tef?.transacao_id;
+            if (idTef) {
+              transacoesTefParaVincular.push(idTef);
+            }
+          });
+
+          [...new Set(transacoesTefParaVincular)].forEach((transacaoId) => {
             db.run(`
               UPDATE tef_transacoes
               SET venda_id = ?
               WHERE id = ?
             `, [
               vendaId,
-              tef.transacao_id
+              transacaoId
             ], (tefErr) => {
               if (tefErr) {
                 console.error('Erro ao vincular TEF à venda:', tefErr);
               }
             });
-          }
+          });
 
           let itensProcessados = 0;
           itens.forEach(item => {
@@ -577,21 +589,33 @@ router.post('/', bloquearVendaSemCaixaAberto, (req, res) => {
         }
         const vendaId = this.lastID;
 
-        // Vincular transação TEF existente à venda
+        const transacoesTefParaVincular = [];
+
         if (tef && tef.transacao_id) {
+          transacoesTefParaVincular.push(tef.transacao_id);
+        }
+
+        pagamentosVenda.forEach((p) => {
+          const idTef = p.tef_transacao_id || p.tef?.transacao_id;
+          if (idTef) {
+            transacoesTefParaVincular.push(idTef);
+          }
+        });
+
+        [...new Set(transacoesTefParaVincular)].forEach((transacaoId) => {
           db.run(`
             UPDATE tef_transacoes
             SET venda_id = ?
             WHERE id = ?
           `, [
             vendaId,
-            tef.transacao_id
+            transacaoId
           ], (tefErr) => {
             if (tefErr) {
               console.error('Erro ao vincular TEF à venda:', tefErr);
             }
           });
-        }
+        });
 
         let itensProcessados = 0;
         itens.forEach(item => {
