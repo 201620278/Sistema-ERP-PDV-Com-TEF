@@ -102,9 +102,11 @@ function renderVendas(vendas) {
                                     <td>${rotuloFormaPagamento(v.forma_pagamento)}</td>
                                     <td>${rotuloStatusVenda(v.status)}</td>
                                     <td>
-                                        <button class="btn btn-sm btn-info" onclick="viewVenda(${v.id})"><i class="fas fa-eye"></i></button>
-                                        <button class="btn btn-sm btn-secondary" title="Resumo Venda/NFC-e/TEF" onclick="verResumoVendaFiscalTEF(${v.id})">📄</button>
-                                        ${v.status !== 'cancelada' ? `<button class="btn btn-sm btn-danger" onclick="cancelarVendaNaoFiscal(${v.id})"><i class="fas fa-times"></i></button>` : ''}
+                                        <div class="d-flex gap-1">
+                                            <button class="btn btn-sm btn-info" onclick="viewVenda(${v.id})"><i class="fas fa-eye"></i></button>
+                                            <button class="btn btn-sm btn-secondary" title="Resumo Venda/NFC-e/TEF" onclick="verResumoVendaFiscalTEF(${v.id})">📄</button>
+                                            ${v.status !== 'cancelada' ? `<button class="btn btn-sm btn-danger" onclick="cancelarVendaNaoFiscal(${v.id})"><i class="fas fa-times"></i></button>` : ''}
+                                        </div>
                                     </td>
                                 </tr>
                             `).join('') || '<tr><td colspan="8" class="text-center">Nenhuma venda encontrada.</td></tr>'}

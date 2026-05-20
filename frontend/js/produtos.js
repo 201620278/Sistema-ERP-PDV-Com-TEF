@@ -73,15 +73,155 @@ function loadProdutos() {
 }
 window.loadProdutos = loadProdutos;
 
+const RELATORIO_PRODUTOS_FILTROS = {
+    todos: 'Todos os produtos',
+    estoque_baixo: 'Estoque baixo',
+    proximo_minimo: 'Próximo do mínimo',
+    vencidos: 'Vencidos',
+    proximo_vencimento: 'Próximos do vencimento'
+};
+
 function showRelatorioEstoqueProdutos() {
-    carregarRelatorioEstoqueProdutos(false);
+    carregarRelatorioEstoqueProdutos('todos');
 }
 
-function toggleRelatorioProdutosMostrarTodos() {
-    const exibirTodosAtual = $('#relatorio-estoque-modal').data('exibir-todos') === true || $('#relatorio-estoque-modal').data('exibir-todos') === 'true';
+function obterTipoFiltroRelatorioAtual() {
+    const modal = document.getElementById('relatorio-estoque-modal');
+    if (modal) {
+        return modal.getAttribute('data-tipo-filtro') || 'todos';
+    }
+    return $('#relatorio-tipo-filtro').val() || 'todos';
+}
+
+function aplicarFiltroRelatorioProdutos() {
+    const tipoFiltro = $('#relatorio-tipo-filtro').val() || 'todos';
     const inicio = $('#relatorio-data-inicio').val() || '';
     const fim = $('#relatorio-data-fim').val() || '';
-    carregarRelatorioEstoqueProdutos(!exibirTodosAtual, inicio, fim);
+    carregarRelatorioEstoqueProdutos(tipoFiltro, inicio, fim);
+}
+
+function classificarEstoqueProduto(p) {
+    const atual = Number(p.estoque_atual || 0);
+    const minimo = Number(p.estoque_minimo || 0);
+    if (minimo <= 0) return 'ok';
+    if (atual <= minimo) return 'estoque_baixo';
+    if (atual <= Math.ceil(minimo * 1.2)) return 'proximo_minimo';
+    return 'ok';
+}
+
+function classificarValidadeProduto(p) {
+    if (Number(p.controlar_validade || 0) !== 1 || !p.data_validade) {
+        return 'nao_controla';
+    }
+    if (p.status_validade === 'vencido') return 'vencido';
+    if (p.status_validade === 'proximo') return 'proximo_vencimento';
+    return 'ok_validade';
+}
+
+function obterStatusVisualProduto(p) {
+    const estoque = classificarEstoqueProduto(p);
+    const validade = classificarValidadeProduto(p);
+    const critico = estoque === 'estoque_baixo' || validade === 'vencido';
+    const alerta = estoque === 'proximo_minimo' || validade === 'proximo_vencimento';
+
+    if (critico) return { nivel: 'critico', estoque, validade };
+    if (alerta) return { nivel: 'alerta', estoque, validade };
+    return { nivel: 'ok', estoque, validade };
+}
+
+function classesLinhaStatusProduto(status) {
+    if (status.nivel === 'critico') {
+        return { row: 'table-danger', text: 'text-danger', estoque: 'text-danger fw-bold' };
+    }
+    if (status.nivel === 'alerta') {
+        return { row: 'table-warning', text: 'text-warning-emphasis', estoque: 'text-warning-emphasis fw-bold' };
+    }
+    return { row: '', text: '', estoque: '' };
+}
+
+function montarBadgesStatusProduto(p) {
+    const status = obterStatusVisualProduto(p);
+    const badges = [];
+
+    if (status.estoque === 'estoque_baixo') {
+        badges.push('<span class="badge bg-danger ms-1">Estoque baixo</span>');
+    } else if (status.estoque === 'proximo_minimo') {
+        badges.push('<span class="badge bg-warning text-dark ms-1">Próximo do mínimo</span>');
+    }
+
+    if (status.validade === 'vencido') {
+        badges.push('<span class="badge bg-danger ms-1">Vencido</span>');
+    } else if (status.validade === 'proximo_vencimento') {
+        const dias = Number(p.dias_para_vencer ?? 0);
+        badges.push(`<span class="badge bg-warning text-dark ms-1">Vence em ${dias} dia(s)</span>`);
+    }
+
+    return badges.join('');
+}
+
+const classificarEstoqueRelatorio = classificarEstoqueProduto;
+const classificarValidadeRelatorio = classificarValidadeProduto;
+
+function filtrarProdutosRelatorio(produtos, tipoFiltro) {
+    const lista = Array.isArray(produtos) ? produtos : [];
+
+    switch (tipoFiltro) {
+        case 'estoque_baixo':
+            return lista.filter((p) => classificarEstoqueRelatorio(p) === 'estoque_baixo');
+        case 'proximo_minimo':
+            return lista.filter((p) => classificarEstoqueRelatorio(p) === 'proximo_minimo');
+        case 'vencidos':
+            return lista.filter((p) => {
+                return classificarValidadeRelatorio(p) === 'vencido' && Number(p.estoque_atual || 0) > 0;
+            });
+        case 'proximo_vencimento':
+            return lista.filter((p) => {
+                return classificarValidadeRelatorio(p) === 'proximo_vencimento' && Number(p.estoque_atual || 0) > 0;
+            });
+        case 'todos':
+        default:
+            return lista;
+    }
+}
+
+function montarBadgesStatusRelatorio(p) {
+    const badges = [];
+    const estoque = classificarEstoqueRelatorio(p);
+
+    if (estoque === 'estoque_baixo') {
+        badges.push('<span class="badge bg-danger">Estoque baixo</span>');
+    } else if (estoque === 'proximo_minimo') {
+        badges.push('<span class="badge bg-warning text-dark">Próximo do mínimo</span>');
+    }
+
+    const validade = classificarValidadeRelatorio(p);
+    if (validade === 'vencido') {
+        badges.push('<span class="badge bg-danger">Vencido</span>');
+    } else if (validade === 'proximo_vencimento') {
+        const dias = Number(p.dias_para_vencer ?? 0);
+        badges.push(`<span class="badge bg-warning text-dark">Vence em ${dias} dia(s)</span>`);
+    }
+
+    if (!badges.length) {
+        badges.push('<span class="badge bg-secondary">OK</span>');
+    }
+
+    return badges.join(' ');
+}
+
+function formatarValidadeRelatorio(valor) {
+    if (!valor) return '-';
+    const data = new Date(`${valor}T00:00:00`);
+    return Number.isNaN(data.getTime()) ? valor : data.toLocaleDateString('pt-BR');
+}
+
+function montarOptionsFiltroRelatorio(tipoAtual) {
+    return Object.entries(RELATORIO_PRODUTOS_FILTROS)
+        .map(([valor, label]) => {
+            const selected = valor === tipoAtual ? 'selected' : '';
+            return `<option value="${valor}" ${selected}>${label}</option>`;
+        })
+        .join('');
 }
 
 function parseRelatorioData(valor) {
@@ -125,6 +265,8 @@ function printRelatorioEstoqueProdutos() {
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
             th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
             th { background: #f8f9fa; }
+            tr.table-danger td { background-color: #f8d7da; }
+            tr.table-warning td { background-color: #fff3cd; }
             .badge { display: inline-block; padding: 0.35em 0.65em; border-radius: 0.35rem; }
             .badge.bg-danger { background-color: #dc3545; color: white; }
             .badge.bg-warning { background-color: #ffc107; color: #212529; }
@@ -154,7 +296,7 @@ function printRelatorioEstoqueProdutos() {
     printWindow.print();
 }
 
-function carregarRelatorioEstoqueProdutos(exibirTodos = false, filtroInicio = '', filtroFim = '') {
+function carregarRelatorioEstoqueProdutos(tipoFiltro = 'todos', filtroInicio = '', filtroFim = '') {
     const params = new URLSearchParams();
 
     if (filtroInicio) params.append('inicio', filtroInicio);
@@ -167,7 +309,7 @@ function carregarRelatorioEstoqueProdutos(exibirTodos = false, filtroInicio = ''
             Authorization: 'Bearer ' + (localStorage.getItem('token') || '')
         },
         success: function(produtos) {
-            renderRelatorioEstoqueProdutos(produtos || [], exibirTodos, filtroInicio, filtroFim);
+            renderRelatorioEstoqueProdutos(produtos || [], tipoFiltro, filtroInicio, filtroFim);
         },
         error: function(xhr) {
             const erro = xhr.responseJSON?.error || 'Erro ao carregar relatório de estoque.';
@@ -176,7 +318,7 @@ function carregarRelatorioEstoqueProdutos(exibirTodos = false, filtroInicio = ''
     });
 }
 
-function renderRelatorioEstoqueProdutos(produtos, exibirTodos = false, filtroInicio = '', filtroFim = '') {
+function renderRelatorioEstoqueProdutos(produtos, tipoFiltro = 'todos', filtroInicio = '', filtroFim = '') {
     produtos = Array.isArray(produtos) ? produtos : [];
     const inicio = parseRelatorioData(filtroInicio);
     const fim = parseRelatorioData(filtroFim);
@@ -187,40 +329,22 @@ function renderRelatorioEstoqueProdutos(produtos, exibirTodos = false, filtroIni
         produtosFiltrados = produtos.filter(p => isRelatorioDataDentroDoIntervalo(p.ultima_compra_data, inicio, fim));
     }
 
-    const itensEstoqueMinimo = produtosFiltrados.filter(p => {
-        const atual = Number(p.estoque_atual || 0);
-        const minimo = Number(p.estoque_minimo || 0);
-        return minimo > 0 && atual <= minimo;
-    });
+    const produtosExibidos = filtrarProdutosRelatorio(produtosFiltrados, tipoFiltro);
 
-    const itensProximosDoMinimo = produtosFiltrados.filter(p => {
-        const atual = Number(p.estoque_atual || 0);
-        const minimo = Number(p.estoque_minimo || 0);
-        return minimo > 0 && atual > minimo && atual <= Math.ceil(minimo * 1.2);
-    });
-
-    const produtosExibidos = exibirTodos
-        ? produtosFiltrados
-        : [...itensEstoqueMinimo, ...itensProximosDoMinimo];
-
-    const valorTotalFiscal = produtosFiltrados.reduce((sum, p) => {
+    const valorTotalFiscal = produtosExibidos.reduce((sum, p) => {
         return sum + (Number(p.estoque_atual || 0) * Number(p.preco_compra || 0));
     }, 0);
 
-    const tituloModo = exibirTodos
-        ? 'Todos os produtos'
-        : 'Estoque mínimo e próximos do mínimo';
+    const tituloModo = RELATORIO_PRODUTOS_FILTROS[tipoFiltro] || 'Todos os produtos';
 
-    const filtroLegenda = exibirTodos
-        ? `Mostrando todos os produtos (${produtosFiltrados.length}).`
-        : `Estoque baixo: ${itensEstoqueMinimo.length}, Próximo do mínimo: ${itensProximosDoMinimo.length}.`;
+    const filtroLegenda = `Exibindo ${produtosExibidos.length} produto(s) de ${produtosFiltrados.length} no período.`;
 
     const filtroDatasTexto = (inicio || fim)
         ? `Filtro aplicado pela data da última compra: ${filtroInicio || 'início não informado'} até ${filtroFim || 'fim não informado'}.`
         : 'Nenhum filtro de data aplicado.';
 
     const modalHtml = `
-        <div class="modal fade" id="relatorio-estoque-modal" tabindex="-1" data-exibir-todos="${exibirTodos}">
+        <div class="modal fade" id="relatorio-estoque-modal" tabindex="-1" data-tipo-filtro="${tipoFiltro}">
             <div class="modal-dialog modal-xl modal-dialog-scrollable">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -229,22 +353,30 @@ function renderRelatorioEstoqueProdutos(produtos, exibirTodos = false, filtroIni
                     </div>
                     <div class="modal-body">
                         <div class="row g-3 mb-3 no-print">
+                            <div class="col-md-4">
+                                <label class="form-label">Tipo de filtro</label>
+                                <select id="relatorio-tipo-filtro" class="form-select">
+                                    ${montarOptionsFiltroRelatorio(tipoFiltro)}
+                                </select>
+                            </div>
                             <div class="col-md-3">
-                                <label class="form-label">Data início</label>
+                                <label class="form-label">Data início (última compra)</label>
                                 <input type="date" id="relatorio-data-inicio" class="form-control" value="${filtroInicio || ''}">
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">Data fim</label>
+                                <label class="form-label">Data fim (última compra)</label>
                                 <input type="date" id="relatorio-data-fim" class="form-control" value="${filtroFim || ''}">
                             </div>
-                            <div class="col-md-6 d-flex align-items-end gap-2">
-                                <button type="button" class="btn btn-primary" onclick="carregarRelatorioEstoqueProdutos(${exibirTodos}, $('#relatorio-data-inicio').val(), $('#relatorio-data-fim').val())">
-                                    Aplicar filtro
+                            <div class="col-md-2 d-flex align-items-end gap-2 flex-wrap">
+                                <button type="button" class="btn btn-primary w-100" onclick="aplicarFiltroRelatorioProdutos()">
+                                    Aplicar
                                 </button>
-                                <button type="button" class="btn btn-outline-secondary" onclick="carregarRelatorioEstoqueProdutos(${exibirTodos})">
-                                    Limpar filtro
+                            </div>
+                            <div class="col-12 d-flex gap-2 flex-wrap">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="carregarRelatorioEstoqueProdutos($('#relatorio-tipo-filtro').val() || 'todos')">
+                                    Limpar datas
                                 </button>
-                                <button type="button" class="btn btn-success" onclick="printRelatorioEstoqueProdutos()">
+                                <button type="button" class="btn btn-success btn-sm" onclick="printRelatorioEstoqueProdutos()">
                                     Imprimir relatório
                                 </button>
                             </div>
@@ -254,7 +386,7 @@ function renderRelatorioEstoqueProdutos(produtos, exibirTodos = false, filtroIni
                             <strong>${tituloModo}</strong>
                             <div class="text-muted">${filtroLegenda}</div>
                             <div class="text-muted">${filtroDatasTexto}</div>
-                            <div class="text-muted">Valor fiscal total do estoque: ${formatCurrency(valorTotalFiscal)}</div>
+                            <div class="text-muted">Valor fiscal total exibido: ${formatCurrency(valorTotalFiscal)}</div>
                         </div>
 
                         <div class="table-responsive">
@@ -265,6 +397,8 @@ function renderRelatorioEstoqueProdutos(produtos, exibirTodos = false, filtroIni
                                         <th>Categoria</th>
                                         <th>Estoque</th>
                                         <th>Mínimo</th>
+                                        <th>Lote</th>
+                                        <th>Validade</th>
                                         <th>Última compra</th>
                                         <th>Total em estoque</th>
                                         <th>Status</th>
@@ -273,8 +407,8 @@ function renderRelatorioEstoqueProdutos(produtos, exibirTodos = false, filtroIni
                                 <tbody>
                                     ${produtosExibidos.length === 0 ? `
                                         <tr>
-                                            <td colspan="7" class="text-center">
-                                                Nenhum produto ${exibirTodos ? 'cadastrado' : 'com estoque baixo ou próximo do mínimo'}.
+                                            <td colspan="9" class="text-center">
+                                                Nenhum produto encontrado para o filtro selecionado.
                                             </td>
                                         </tr>
                                     ` : produtosExibidos.map(p => {
@@ -282,28 +416,19 @@ function renderRelatorioEstoqueProdutos(produtos, exibirTodos = false, filtroIni
                                         const estoqueMinimo = Number(p.estoque_minimo || 0);
                                         const precoCompra = Number(p.preco_compra || 0);
                                         const totalItem = estoqueAtual * precoCompra;
-
-                                        const status = estoqueAtual <= estoqueMinimo
-                                            ? 'Baixo'
-                                            : estoqueAtual <= Math.ceil(estoqueMinimo * 1.2)
-                                                ? 'Próximo do mínimo'
-                                                : 'OK';
-
-                                        const badgeClass = estoqueAtual <= estoqueMinimo
-                                            ? 'badge bg-danger'
-                                            : estoqueAtual <= Math.ceil(estoqueMinimo * 1.2)
-                                                ? 'badge bg-warning text-dark'
-                                                : 'badge bg-secondary';
+                                        const classes = classesLinhaStatusProduto(obterStatusVisualProduto(p));
 
                                         return `
-                                            <tr>
-                                                <td>${escapeHtml(p.nome || '-')}</td>
+                                            <tr class="${classes.row}">
+                                                <td class="${classes.text}">${escapeHtml(p.nome || '-')}</td>
                                                 <td>${escapeHtml(p.categoria || '-')}</td>
                                                 <td>${estoqueAtual}</td>
                                                 <td>${estoqueMinimo}</td>
+                                                <td>${escapeHtml(p.lote || '-')}</td>
+                                                <td>${formatarValidadeRelatorio(p.data_validade)}</td>
                                                 <td>${formatarUltimaCompraRelatorio(p.ultima_compra_data)}</td>
                                                 <td>${formatCurrency(totalItem)}</td>
-                                                <td><span class="${badgeClass}">${status}</span></td>
+                                                <td>${montarBadgesStatusRelatorio(p)}</td>
                                             </tr>
                                         `;
                                     }).join('')}
@@ -314,9 +439,6 @@ function renderRelatorioEstoqueProdutos(produtos, exibirTodos = false, filtroIni
 
                     <div class="modal-footer no-print">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
-                        <button type="button" class="btn btn-primary" onclick="toggleRelatorioProdutosMostrarTodos()">
-                            ${exibirTodos ? 'Mostrar apenas estoque crítico' : 'Mostrar todos produtos'}
-                        </button>
                     </div>
                 </div>
             </div>
@@ -388,16 +510,31 @@ function aplicarFiltrosProdutos(produtos) {
     }
 }
 
+function produtoComEstoqueBaixo(p) {
+    return classificarEstoqueProduto(p) === 'estoque_baixo';
+}
+
+function produtoProximoMinimo(p) {
+    return classificarEstoqueProduto(p) === 'proximo_minimo';
+}
+
 function renderProdutoRow(p) {
+    const status = obterStatusVisualProduto(p);
+    const classes = classesLinhaStatusProduto(status);
+    const badges = montarBadgesStatusProduto(p);
+
     return `
-        <tr>
-            <td>${escapeHtml(p.nome || '')}</td>
+        <tr class="${classes.row}">
+            <td class="${classes.text} fw-semibold">${escapeHtml(p.nome || '')}</td>
             <td>${escapeHtml(p.codigo || '')}</td>
             <td>${escapeHtml(p.categoria || p.categoria_nome || '')}</td>
             <td>${escapeHtml(p.unidade || '')}</td>
             <td>${formatCurrency(p.preco_compra || 0)}</td>
             <td>${formatCurrency(p.preco_venda || 0)}</td>
-            <td>${formatarEstoqueProduto(p.estoque_atual, p.unidade)}</td>
+            <td class="${classes.estoque}">
+                ${formatarEstoqueProduto(p.estoque_atual, p.unidade)}
+                ${badges}
+            </td>
             <td>
                 <button class="btn btn-sm btn-info" onclick="viewProduto(${p.id})">
                     <i class="fas fa-eye"></i>
@@ -480,111 +617,7 @@ function renderProdutosAgrupados(produtos) {
 }
 
 function gerarRelatorioEstoque() {
-    const produtosBase = window.produtosCache || [];
-
-    if (!produtosBase.length) {
-        showNotification('Nenhum produto encontrado para gerar relatório.', 'warning');
-        return;
-    }
-
-    const escolha = confirm(
-        'Deseja listar TODOS os produtos?\n\nOK = Todos os produtos\nCancelar = Apenas estoque baixo e próximo do mínimo'
-    );
-
-    const produtosRelatorio = escolha
-        ? produtosBase
-        : produtosBase.filter(p => {
-            const estoque = Number(p.estoque_atual || 0);
-            const minimo = Number(p.estoque_minimo || 0);
-
-            if (minimo <= 0) return false;
-
-            return estoque <= minimo || estoque <= minimo + 3;
-        });
-
-    if (!produtosRelatorio.length) {
-        showNotification('Nenhum produto com estoque baixo ou próximo do mínimo.', 'success');
-        return;
-    }
-
-    const linhas = produtosRelatorio.map(p => {
-        const estoque = Number(p.estoque_atual || 0);
-        const minimo = Number(p.estoque_minimo || 0);
-
-        let status = 'OK';
-
-        if (minimo > 0 && estoque <= minimo) {
-            status = 'ESTOQUE BAIXO';
-        } else if (minimo > 0 && estoque <= minimo + 3) {
-            status = 'PRÓXIMO DO MÍNIMO';
-        }
-
-        return `
-            <tr>
-                <td>${escapeHtml(p.nome || '')}</td>
-                <td>${escapeHtml(p.codigo || '')}</td>
-                <td>${escapeHtml(p.categoria || p.categoria_nome || '')}</td>
-                <td>${escapeHtml(p.subcategoria || p.subcategoria_nome || '')}</td>
-                <td>${escapeHtml(p.unidade || '')}</td>
-                <td>${estoque}</td>
-                <td>${minimo}</td>
-                <td>${formatCurrency(p.preco_compra || 0)}</td>
-                <td>${formatCurrency(p.preco_venda || 0)}</td>
-                <td><strong>${status}</strong></td>
-            </tr>
-        `;
-    }).join('');
-
-    const janela = window.open('', '_blank', 'width=1100,height=700');
-
-    janela.document.write(`
-        <html>
-        <head>
-            <title>Relatório de Estoque</title>
-            <style>
-                body { font-family: Arial, sans-serif; padding: 20px; }
-                h2 { margin-bottom: 5px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-                th, td { border: 1px solid #ccc; padding: 8px; font-size: 12px; }
-                th { background: #f2f2f2; }
-            </style>
-        </head>
-        <body>
-            <h2>Relatório de Estoque</h2>
-            <small>Gerado em: ${new Date().toLocaleString('pt-BR')}</small>
-            <p>
-                <strong>Modo:</strong>
-                ${escolha ? 'Todos os produtos' : 'Estoque baixo e próximo do mínimo'}
-            </p>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>Produto</th>
-                        <th>Código</th>
-                        <th>Categoria</th>
-                        <th>Subcategoria</th>
-                        <th>Unidade</th>
-                        <th>Estoque Atual</th>
-                        <th>Estoque Mínimo</th>
-                        <th>Preço Compra</th>
-                        <th>Preço Venda</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${linhas}
-                </tbody>
-            </table>
-
-            <script>
-                window.print();
-            </script>
-        </body>
-        </html>
-    `);
-
-    janela.document.close();
+    showRelatorioEstoqueProdutos();
 }
 
 // Renderiza listagem de produtos
@@ -592,6 +625,36 @@ function renderProdutos(produtos) {
     window.produtosCache = produtos;
     window.produtosOriginais = produtos;
     const html = `
+        <div class="row mb-3 g-3">
+            <div class="col-md-6">
+                <div class="card mb-0 border-danger h-100" id="cardEstoqueBaixoProdutos">
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2 bg-danger bg-opacity-10">
+                        <strong class="text-danger"><i class="fas fa-exclamation-triangle me-2"></i>Alertas de estoque</strong>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="carregarEstoqueBaixoProdutos()">
+                            <i class="fas fa-sync-alt"></i> Atualizar
+                        </button>
+                    </div>
+                    <div class="card-body" id="listaEstoqueBaixoProdutos">
+                        <div class="text-muted">Carregando...</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card-dashboard card-vencimentos h-100" id="cardVencimentosProdutos">
+                    <div class="card-icon">⏰</div>
+                    <div class="card-info">
+                        <h3>Vencimentos</h3>
+                        <p>
+                            <strong id="qtdProdutosVencidos">0</strong> vencidos |
+                            <strong id="qtdProdutosProximos">0</strong> próximos
+                        </p>
+                        <button type="button" class="btn btn-warning btn-sm" onclick="abrirModalVencimentosProdutos()">
+                            Ver produtos
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="card">
             <div class="card-header">
                 <div class="row align-items-center">
@@ -632,6 +695,10 @@ function renderProdutos(produtos) {
                     <i class="fas fa-info-circle me-2"></i>
                     Clique em uma categoria para ver os produtos. Use a busca acima para pesquisar em todos os produtos.
                 </div>
+                <div class="d-flex flex-wrap gap-3 mb-3 small">
+                    <span><span class="d-inline-block rounded px-2 py-1 bg-warning">&nbsp;</span> Amarelo: próximo do mínimo ou do vencimento</span>
+                    <span><span class="d-inline-block rounded px-2 py-1 bg-danger">&nbsp;</span> Vermelho: estoque no mínimo ou abaixo / vencido</span>
+                </div>
                 <div id="categorias-container">
                     ${renderCategoriasProdutos(produtos)}
                 </div>
@@ -665,6 +732,9 @@ function renderProdutos(produtos) {
 
     // Carregar categorias inicialmente
     carregarCategoriasProdutos();
+    inicializarCardEstoqueBaixo();
+    inicializarModalVencimentosProdutos();
+    carregarVencimentosProdutos();
 }
 
 function renderCategoriasProdutos(produtos) {
@@ -723,15 +793,24 @@ function carregarCategoriasProdutos() {
 
             // Contar produtos por categoria
             const categoriasComContagem = categorias.map(cat => {
-                const count = (window.produtosCache || []).filter(p => String(p.categoria_id) === String(cat.id)).length;
-                return { ...cat, count };
+                const produtosCategoria = (window.produtosCache || []).filter(
+                    (p) => String(p.categoria_id) === String(cat.id)
+                );
+                const count = produtosCategoria.length;
+                const countBaixo = produtosCategoria.filter((p) => produtoComEstoqueBaixo(p)).length;
+                const countProximo = produtosCategoria.filter((p) => produtoProximoMinimo(p)).length;
+                return { ...cat, count, countBaixo, countProximo };
             }).filter(cat => cat.count > 0);
 
             const html = categoriasComContagem.map(cat => `
                 <div class="card mb-2 categoria-card" data-categoria-id="${cat.id}">
                     <div class="card-header bg-light d-flex justify-content-between align-items-center" style="cursor: pointer;" onclick="toggleProdutosCategoriaMenu(${cat.id}, '${escapeHtml(cat.nome)}')">
                         <strong><i class="fas fa-folder me-2"></i>${escapeHtml(cat.nome)}</strong>
-                        <span class="badge bg-primary">${cat.count}</span>
+                        <span>
+                            <span class="badge bg-primary">${cat.count}</span>
+                            ${cat.countProximo > 0 ? `<span class="badge bg-warning text-dark ms-1" title="Próximo do estoque mínimo">${cat.countProximo} próx.</span>` : ''}
+                            ${cat.countBaixo > 0 ? `<span class="badge bg-danger ms-1" title="Estoque no mínimo ou abaixo">${cat.countBaixo} baixo</span>` : ''}
+                        </span>
                     </div>
                     <div class="card-body p-0" id="produtos-categoria-${cat.id}" style="display: none;">
                         <div class="text-center py-3">
@@ -803,40 +882,7 @@ function renderProdutosRows(produtos) {
         return '<tr><td colspan="8" class="text-center">Nenhum produto cadastrado</td></tr>';
     }
 
-    return produtos.map(p => {
-        const estoqueAtual = Number(p.estoque_atual || 0);
-        const estoqueMinimo = Number(p.estoque_minimo || 0);
-        const estoqueBaixo = estoqueAtual <= estoqueMinimo;
-
-        return `
-            <tr class="${estoqueBaixo ? 'table-danger' : ''}">
-                <td>${escapeHtml(p.nome || '')}</td>
-                <td>${escapeHtml(p.codigo || '-')}</td>
-                <td>${escapeHtml(p.categoria || '-')}</td>
-                <td>${escapeHtml(p.unidade || '-')}</td>
-                <td>${formatCurrency(Number(p.preco_compra || 0))}</td>
-                <td>${formatCurrency(Number(p.preco_venda || 0))}</td>
-                <td>
-                    ${estoqueAtual}
-                    ${estoqueBaixo ? '<span class="badge bg-danger ms-1">Baixo</span>' : ''}
-                </td>
-                <td>
-                    <button class="btn btn-sm btn-info" onclick="viewProduto(${p.id})" title="Detalhes">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button class="btn btn-sm btn-warning" onclick="editProduto(${p.id})" title="Editar">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteProduto(${p.id})" title="Excluir">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                    <button class="btn btn-sm btn-secondary" onclick="showHistoricoPrecos(${p.id})" title="Histórico de preços">
-                        <i class="fas fa-history"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-    }).join('');
+    return produtos.map((p) => renderProdutoRow(p)).join('');
 }
 
 
@@ -1045,6 +1091,53 @@ function showProdutoModal(produto = null) {
                                         style="z-index: 9999; display: none;"
                                     ></div>
                                 </div>
+
+                                <div class="col-12">
+                                    <div class="row g-3 border rounded p-3 mb-2 bg-light">
+                                        <div class="col-md-12">
+                                            <div class="form-check">
+                                                <input
+                                                    class="form-check-input"
+                                                    type="checkbox"
+                                                    id="controlar_validade"
+                                                    ${isEdit && Number(produto.controlar_validade || 0) === 1 ? 'checked' : ''}
+                                                >
+                                                <label class="form-check-label" for="controlar_validade">
+                                                    Controlar validade deste produto
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="data_validade" class="form-label">Data de validade</label>
+                                            <input
+                                                type="date"
+                                                id="data_validade"
+                                                class="form-control"
+                                                value="${isEdit ? (produto.data_validade || '') : ''}"
+                                            >
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="lote" class="form-label">Lote</label>
+                                            <input
+                                                type="text"
+                                                id="lote"
+                                                class="form-control"
+                                                placeholder="Ex: LOTE001"
+                                                value="${isEdit ? escapeHtml(produto.lote || '') : ''}"
+                                            >
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="dias_alerta_validade" class="form-label">Alertar com quantos dias?</label>
+                                            <input
+                                                type="number"
+                                                id="dias_alerta_validade"
+                                                class="form-control"
+                                                value="${isEdit ? Number(produto.dias_alerta_validade || 30) : 30}"
+                                                min="1"
+                                            >
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="card mt-3">
@@ -1118,6 +1211,18 @@ function showProdutoModal(produto = null) {
     inicializarCategoriasESubcategorias(produto, isEdit);
     inicializarAutocompleteFornecedor();
     inicializarCalculoPreco(produto, isEdit);
+
+    if (isEdit && produto) {
+        $('#data_validade').val(produto.data_validade || '');
+        $('#lote').val(produto.lote || '');
+        $('#dias_alerta_validade').val(produto.dias_alerta_validade || 30);
+        $('#controlar_validade').prop('checked', produto.controlar_validade == 1);
+    } else {
+        $('#data_validade').val('');
+        $('#lote').val('');
+        $('#dias_alerta_validade').val(30);
+        $('#controlar_validade').prop('checked', false);
+    }
 
     // ...
 }
@@ -1404,6 +1509,10 @@ function saveProduto() {
         estoque_atual: parseFloat($('#estoque_atual').val()) || 0,
         estoque_minimo: parseFloat($('#estoque_minimo').val()) || 0,
         fornecedor: ($('#fornecedor').val() || '').trim(),
+        data_validade: ($('#data_validade').val() || '').trim() || null,
+        lote: ($('#lote').val() || '').trim(),
+        dias_alerta_validade: parseInt($('#dias_alerta_validade').val(), 10) || 30,
+        controlar_validade: $('#controlar_validade').is(':checked') ? 1 : 0,
         ncm: ($('#ncm').val() || '').trim(),
         cfop: ($('#cfop').val() || '').trim(),
         csosn: ($('#csosn').val() || '').trim(),
@@ -1419,6 +1528,11 @@ function saveProduto() {
         custo_por_kg: parseFloat($('#custo_por_kg').val()) || 0
     };
 
+    if (data.controlar_validade === 1 && !data.data_validade) {
+        showNotification('Informe a data de validade do produto ou desative o controle de validade.', 'warning');
+        $('#data_validade').focus();
+        return;
+    }
 
     if (!data.nome) {
         showNotification('Informe o nome do produto.', 'warning');
@@ -1687,3 +1801,232 @@ function formatarEstoqueProduto(valor, unidade = '') {
 
     return `${numero.toFixed(0)} ${unidade || 'UN'}`;
 }
+
+function montarTabelaEstoqueResumo(lista, classeLinha) {
+  if (!lista.length) return '';
+
+  return `
+    <table class="table table-sm table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Produto</th>
+          <th>Código</th>
+          <th class="text-end">Estoque</th>
+          <th class="text-end">Mínimo</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lista.map((p) => `
+          <tr class="${classeLinha}">
+            <td class="fw-semibold">${escapeHtml(p.nome || '')}</td>
+            <td>${escapeHtml(p.codigo || '-')}</td>
+            <td class="text-end fw-bold">${formatarEstoqueProduto(p.estoque_atual, p.unidade)}</td>
+            <td class="text-end">${formatarEstoqueProduto(p.estoque_minimo, p.unidade)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function montarListaEstoqueBaixoProdutos(criticos, proximos) {
+  const listaCriticos = Array.isArray(criticos) ? criticos : [];
+  const listaProximos = Array.isArray(proximos) ? proximos : [];
+
+  if (!listaCriticos.length && !listaProximos.length) {
+    return '<div class="text-muted">Nenhum alerta de estoque no momento.</div>';
+  }
+
+  let html = '<div class="table-responsive">';
+
+  if (listaCriticos.length) {
+    html += `
+      <p class="small text-danger fw-semibold mb-1">Estoque no mínimo ou abaixo (${listaCriticos.length})</p>
+      ${montarTabelaEstoqueResumo(listaCriticos, 'table-danger')}
+    `;
+  }
+
+  if (listaProximos.length) {
+    html += `
+      <p class="small text-warning-emphasis fw-semibold mb-1 mt-3">Próximo do mínimo (${listaProximos.length})</p>
+      ${montarTabelaEstoqueResumo(listaProximos, 'table-warning')}
+    `;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function separarProdutosPorEstoque(produtos) {
+  const criticos = [];
+  const proximos = [];
+
+  (produtos || []).forEach((p) => {
+    const tipo = classificarEstoqueProduto(p);
+    if (tipo === 'estoque_baixo') criticos.push(p);
+    else if (tipo === 'proximo_minimo') proximos.push(p);
+  });
+
+  return { criticos, proximos };
+}
+
+async function carregarEstoqueBaixoProdutos() {
+  const container = document.getElementById('listaEstoqueBaixoProdutos');
+  if (!container) return;
+
+  container.innerHTML = '<div class="text-muted">Carregando...</div>';
+
+  const cache = window.produtosCache || window.produtosList || [];
+  if (cache.length) {
+    const { criticos, proximos } = separarProdutosPorEstoque(cache);
+    container.innerHTML = montarListaEstoqueBaixoProdutos(criticos, proximos);
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/produtos/estoque/baixo`, {
+      headers: {
+        Authorization: 'Bearer ' + (localStorage.getItem('token') || '')
+      }
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Erro ao carregar estoque baixo.');
+    }
+
+    container.innerHTML = montarListaEstoqueBaixoProdutos(data, []);
+  } catch (error) {
+    console.error('Erro estoque baixo:', error);
+    container.innerHTML = '<div class="text-danger">Erro ao carregar alertas de estoque.</div>';
+  }
+}
+
+function inicializarCardEstoqueBaixo() {
+  carregarEstoqueBaixoProdutos();
+}
+
+window.carregarEstoqueBaixoProdutos = carregarEstoqueBaixoProdutos;
+
+function inicializarModalVencimentosProdutos() {
+    if ($('#modalVencimentosProdutos').length) return;
+
+    $('body').append(`
+        <div class="modal fade" id="modalVencimentosProdutos" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Produtos vencidos ou próximos do vencimento</h5>
+                        <button type="button" class="btn-close" onclick="fecharModalVencimentosProdutos()" aria-label="Fechar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Produto</th>
+                                    <th>Estoque</th>
+                                    <th>Lote</th>
+                                    <th>Validade</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="listaVencimentosProdutos">
+                                <tr>
+                                    <td colspan="5">Carregando...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+}
+
+async function carregarVencimentosProdutos() {
+    try {
+        const response = await fetch(`${API_URL}/produtos/vencimentos/alertas?dias=30`, {
+            headers: {
+                Authorization: 'Bearer ' + (localStorage.getItem('token') || '')
+            }
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Erro ao carregar vencimentos');
+        }
+
+        $('#qtdProdutosVencidos').text(data.vencidos || 0);
+        $('#qtdProdutosProximos').text(data.proximos || 0);
+
+        renderizarListaVencimentosProdutos(data.produtos || []);
+    } catch (error) {
+        console.error('Erro ao carregar vencimentos:', error);
+        $('#qtdProdutosVencidos').text('0');
+        $('#qtdProdutosProximos').text('0');
+    }
+}
+
+function renderizarListaVencimentosProdutos(produtos) {
+    const tbody = $('#listaVencimentosProdutos');
+
+    if (!tbody.length) return;
+
+    if (!produtos.length) {
+        tbody.html(`
+            <tr>
+                <td colspan="5" class="text-center text-muted">
+                    Nenhum produto vencido ou próximo do vencimento.
+                </td>
+            </tr>
+        `);
+        return;
+    }
+
+    tbody.html(produtos.map((produto) => {
+        const vencido = produto.status_validade === 'vencido';
+        const statusTexto = vencido
+            ? 'Vencido'
+            : `Vence em ${produto.dias_para_vencer} dia(s)`;
+
+        const linhaClasse = vencido ? 'table-danger' : 'table-warning';
+        const badgeClasse = vencido ? 'bg-danger' : 'bg-warning text-dark';
+
+        const validadeFormatada = produto.data_validade
+            ? new Date(produto.data_validade + 'T00:00:00').toLocaleDateString('pt-BR')
+            : '-';
+
+        return `
+            <tr class="${linhaClasse}">
+                <td class="fw-semibold">${escapeHtml(produto.nome || '-')}</td>
+                <td>${produto.estoque_atual || 0}</td>
+                <td>${escapeHtml(produto.lote || '-')}</td>
+                <td>${validadeFormatada}</td>
+                <td>
+                    <span class="badge ${badgeClasse}">
+                        ${statusTexto}
+                    </span>
+                </td>
+            </tr>
+        `;
+    }).join(''));
+}
+
+function abrirModalVencimentosProdutos() {
+    carregarVencimentosProdutos();
+    const el = document.getElementById('modalVencimentosProdutos');
+    if (el) {
+        bootstrap.Modal.getOrCreateInstance(el).show();
+    }
+}
+
+function fecharModalVencimentosProdutos() {
+    const el = document.getElementById('modalVencimentosProdutos');
+    if (el) {
+        bootstrap.Modal.getInstance(el)?.hide();
+    }
+}
+
+window.carregarVencimentosProdutos = carregarVencimentosProdutos;
+window.abrirModalVencimentosProdutos = abrirModalVencimentosProdutos;
+window.fecharModalVencimentosProdutos = fecharModalVencimentosProdutos;

@@ -9,7 +9,14 @@ router.get('/', (req, res) => {
     SELECT 
       p.*,
       c.nome AS categoria_nome,
-      s.nome AS subcategoria_nome
+      s.nome AS subcategoria_nome,
+      CAST(julianday(date(p.data_validade)) - julianday(date('now', 'localtime')) AS INTEGER) AS dias_para_vencer,
+      CASE
+        WHEN COALESCE(p.controlar_validade, 0) != 1 OR p.data_validade IS NULL OR p.data_validade = '' THEN NULL
+        WHEN date(p.data_validade) < date('now', 'localtime') THEN 'vencido'
+        WHEN date(p.data_validade) <= date('now', 'localtime', '+' || COALESCE(p.dias_alerta_validade, 30) || ' days') THEN 'proximo'
+        ELSE 'ok'
+      END AS status_validade
     FROM produtos p
     LEFT JOIN categorias c ON c.id = p.categoria_id
     LEFT JOIN subcategorias s ON s.id = p.subcategoria_id
@@ -111,7 +118,14 @@ router.get('/relatorio-estoque', (req, res) => {
         INNER JOIN compras_itens ci2 ON ci2.compra_id = c2.id
         WHERE ci2.produto_id = p.id
         ${filtrosUltimaCompra}
-      ) AS ultima_compra_data
+      ) AS ultima_compra_data,
+      CAST(julianday(date(p.data_validade)) - julianday(date('now', 'localtime')) AS INTEGER) AS dias_para_vencer,
+      CASE
+        WHEN COALESCE(p.controlar_validade, 0) != 1 OR p.data_validade IS NULL OR p.data_validade = '' THEN NULL
+        WHEN date(p.data_validade) < date('now', 'localtime') THEN 'vencido'
+        WHEN date(p.data_validade) <= date('now', 'localtime', '+' || COALESCE(p.dias_alerta_validade, 30) || ' days') THEN 'proximo'
+        ELSE 'ok'
+      END AS status_validade
     FROM produtos p
     LEFT JOIN categorias c ON c.id = p.categoria_id
     LEFT JOIN subcategorias s ON s.id = p.subcategoria_id
@@ -183,6 +197,108 @@ router.get('/consulta-pdv/buscar', (req, res) => {
   });
 });
 
+router.get('/ranking-vendas', (req, res) => {
+  const hoje = new Date();
+  const seteDiasAtras = new Date();
+  seteDiasAtras.setDate(hoje.getDate() - 7);
+
+  const dataInicio = req.query.inicio || seteDiasAtras.toISOString().slice(0, 10);
+  const dataFim = req.query.fim || hoje.toISOString().slice(0, 10);
+
+  const sqlBase = `
+    SELECT 
+      p.id,
+      p.nome,
+      COALESCE(SUM(vi.quantidade), 0) AS quantidade_vendida,
+      COALESCE(COUNT(DISTINCT v.id), 0) AS total_vendas
+    FROM produtos p
+    LEFT JOIN vendas_itens vi ON vi.produto_id = p.id
+    LEFT JOIN vendas v ON v.id = vi.venda_id
+      AND date(v.data_venda) BETWEEN date(?) AND date(?)
+      AND (v.status IS NULL OR v.status != 'cancelada')
+    GROUP BY p.id, p.nome
+  `;
+
+  db.all(`
+    ${sqlBase}
+    HAVING quantidade_vendida > 0
+    ORDER BY quantidade_vendida DESC
+    LIMIT 3
+  `, [dataInicio, dataFim], (errMais, maisVendidos) => {
+    if (errMais) {
+      return res.status(500).json({ error: errMais.message });
+    }
+
+    db.all(`
+      ${sqlBase}
+      HAVING quantidade_vendida > 0
+      ORDER BY quantidade_vendida ASC
+      LIMIT 3
+    `, [dataInicio, dataFim], (errMenos, menosVendidos) => {
+      if (errMenos) {
+        return res.status(500).json({ error: errMenos.message });
+      }
+
+      res.json({
+        periodo: {
+          inicio: dataInicio,
+          fim: dataFim
+        },
+        mais_vendidos: maisVendidos || [],
+        menos_vendidos: menosVendidos || []
+      });
+    });
+  });
+});
+
+// Acompanhamento de vencimentos de produtos
+router.get('/vencimentos/alertas', (req, res) => {
+  const diasPadrao = Math.max(parseInt(req.query.dias || '30', 10) || 30, 0);
+
+  db.all(`
+    SELECT
+      id,
+      codigo,
+      codigo_barras,
+      nome,
+      unidade,
+      estoque_atual,
+      fornecedor,
+      lote,
+      data_validade,
+      controlar_validade,
+      COALESCE(dias_alerta_validade, ?) AS dias_alerta_validade,
+      CAST(julianday(date(data_validade)) - julianday(date('now', 'localtime')) AS INTEGER) AS dias_para_vencer,
+      CASE
+        WHEN date(data_validade) < date('now', 'localtime') THEN 'vencido'
+        WHEN date(data_validade) <= date('now', 'localtime', '+' || COALESCE(dias_alerta_validade, ?) || ' days') THEN 'proximo'
+        ELSE 'ok'
+      END AS status_validade
+    FROM produtos
+    WHERE COALESCE(controlar_validade, 0) = 1
+      AND data_validade IS NOT NULL
+      AND data_validade != ''
+      AND estoque_atual > 0
+      AND date(data_validade) <= date('now', 'localtime', '+' || COALESCE(dias_alerta_validade, ?) || ' days')
+    ORDER BY date(data_validade) ASC, nome ASC
+  `, [diasPadrao, diasPadrao, diasPadrao], (err, rows) => {
+    if (err) {
+      console.error('Erro ao buscar vencimentos de produtos:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+
+    const lista = rows || [];
+
+    res.json({
+      dias_padrao: diasPadrao,
+      total: lista.length,
+      vencidos: lista.filter(p => p.status_validade === 'vencido').length,
+      proximos: lista.filter(p => p.status_validade === 'proximo').length,
+      produtos: lista
+    });
+  });
+});
+
 // Buscar produto por ID trazendo o nome da categoria
 // Buscar produto por ID trazendo o nome da categoria e subcategoria
 router.get('/:id', (req, res) => {
@@ -218,6 +334,7 @@ router.post('/', (req, res) => {
     lucro_percentual, preco_venda, estoque_atual, estoque_minimo, fornecedor,
     ncm, cfop, csosn, origem, cest, codigo_barras,
     aliquota_icms, aliquota_pis, aliquota_cofins,
+    data_validade, lote, dias_alerta_validade, controlar_validade,
     vendido_por_peso, peso_total_compra, valor_total_compra, custo_por_kg
   } = req.body;
 
@@ -228,15 +345,20 @@ router.post('/', (req, res) => {
       estoque_atual, estoque_minimo, fornecedor,
       ncm, cfop, csosn, origem, cest, codigo_barras,
       aliquota_icms, aliquota_pis, aliquota_cofins,
+      data_validade, lote, dias_alerta_validade, controlar_validade,
       vendido_por_peso, peso_total_compra, valor_total_compra, custo_por_kg
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (${Array(28).fill('?').join(', ')})
   `, [
     codigo, nome, categoria_id, subcategoria_id, unidade,
     preco_compra, lucro_percentual, preco_venda,
     estoque_atual || 0, estoque_minimo || 0, fornecedor,
     ncm, cfop, csosn, origem, cest, codigo_barras,
     aliquota_icms, aliquota_pis, aliquota_cofins,
+    data_validade || null,
+    lote || '',
+    dias_alerta_validade || 30,
+    controlar_validade ? 1 : 0,
     vendido_por_peso || 0,
     peso_total_compra || 0,
     valor_total_compra || 0,
@@ -244,6 +366,7 @@ router.post('/', (req, res) => {
   ],
     function(err) {
       if (err) {
+        console.error('Erro ao criar produto:', err.message);
         res.status(500).json({ error: err.message });
         return;
       }

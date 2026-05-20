@@ -127,6 +127,7 @@ const impressaoRoutes = require('./rotas/impressao');
 const caixaRoutes = require('./rotas/caixa');
 const backupRoutes = require('./rotas/backup');
 const tefRoutes = require('./rotas/tef');
+const dashboardRoutes = require('./rotas/dashboard');
 // const usuariosRoutes = require('./rotas/usuarios');
 
 app.use('/api/produtos', verificarToken, produtosRoutes);
@@ -135,6 +136,7 @@ app.use('/api/compras', verificarToken, comprasRoutes);
 app.use('/api/categorias', verificarToken, categoriasRoutes);
 app.use('/api/subcategorias', verificarToken, subcategoriasRoutes);
 app.use('/api/vendas', verificarToken, vendasRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/financeiro', verificarToken, financeiroRoutes);
 app.use('/api/configuracoes', verificarToken, configuracoesRoutes);
 app.use('/api/fiscal', verificarToken, fiscalRoutes);

@@ -343,15 +343,20 @@ function carregarPaginaHtml(url, callback) {
         }
 
         const inlineScripts = [];
+        const pendingScripts = [];
 
         nodes.forEach(node => {
             if (node.nodeType === 1 && node.tagName.toLowerCase() === 'script') {
                 if (node.src) {
                     const srcPath = node.getAttribute('src');
                     if (!isScriptAlreadyLoaded(srcPath)) {
-                        const script = document.createElement('script');
-                        script.src = srcPath;
-                        document.body.appendChild(script);
+                        pendingScripts.push(new Promise((resolve) => {
+                            const script = document.createElement('script');
+                            script.src = srcPath;
+                            script.onload = resolve;
+                            script.onerror = resolve;
+                            document.body.appendChild(script);
+                        }));
                     }
                 } else {
                     inlineScripts.push(node.text || node.textContent || node.innerHTML || '');
@@ -367,7 +372,15 @@ function carregarPaginaHtml(url, callback) {
             }
         });
 
-        if (typeof callback === 'function') callback();
+        const executarCallback = () => {
+            if (typeof callback === 'function') callback();
+        };
+
+        if (pendingScripts.length === 0) {
+            executarCallback();
+        } else {
+            Promise.all(pendingScripts).then(executarCallback);
+        }
     }).fail(function() {
         $('#page-content').html('<div class="alert alert-danger">Erro ao carregar a página solicitada.</div>');
     });
@@ -412,6 +425,14 @@ function loadPage(page) {
                     loadPDV();
                 } else {
                     $('#page-content').html('<div class="alert alert-danger">Erro ao carregar o PDV.</div>');
+                }
+            });
+        case 'dashboard':
+            return carregarPaginaHtml('dashboard.html', function() {
+                if (typeof initDashboard === 'function') {
+                    initDashboard();
+                } else {
+                    $('#page-content').html('<div class="alert alert-danger">Erro ao carregar dashboard.</div>');
                 }
             });
         case 'produtos':
