@@ -94,7 +94,9 @@ router.get('/resumo', async (req, res) => {
       contasReceberCr,
       contasReceberFin,
       contasPagar,
-      vendasPorForma
+      vendasPorForma,
+      produtosVencidos,
+      produtosProximoVencimento
     ] = await Promise.all([
       dbGet(`
         SELECT
@@ -183,7 +185,28 @@ router.get('/resumo', async (req, res) => {
           AND (status IS NULL OR status != 'cancelada')
         GROUP BY COALESCE(NULLIF(TRIM(LOWER(forma_pagamento)), ''), 'nao_informado')
         ORDER BY total DESC
-      `, [dataInicio, dataFim])
+      `, [dataInicio, dataFim]),
+
+      dbAll(`
+        SELECT id, nome, estoque_atual, data_validade
+        FROM produtos
+        WHERE data_validade IS NOT NULL
+          AND data_validade <> ''
+          AND date(data_validade) < date('now', 'localtime')
+        ORDER BY date(data_validade) ASC
+        LIMIT 10
+      `),
+
+      dbAll(`
+        SELECT id, nome, estoque_atual, data_validade
+        FROM produtos
+        WHERE data_validade IS NOT NULL
+          AND data_validade <> ''
+          AND date(data_validade) >= date('now', 'localtime')
+          AND date(data_validade) <= date('now', 'localtime', '+30 days')
+        ORDER BY date(data_validade) ASC
+        LIMIT 10
+      `)
     ]);
 
     const idsMais = maisVendidos.map((p) => p.id);
@@ -202,7 +225,7 @@ router.get('/resumo', async (req, res) => {
     const qtdReceberCr = parseNumber(contasReceberCr.quantidade);
     const qtdReceberFin = parseNumber(contasReceberFin.quantidade);
 
-    res.json({
+    const resposta = {
       periodo: {
         inicio: dataInicio,
         fim: dataFim
@@ -260,8 +283,14 @@ router.get('/resumo', async (req, res) => {
         forma_pagamento: row.forma_pagamento,
         quantidade: parseNumber(row.quantidade),
         total: parseNumber(row.total)
-      }))
-    });
+      })),
+
+      // Validade de produtos
+      produtos_vencidos: produtosVencidos,
+      produtos_proximo_vencimento: produtosProximoVencimento
+    };
+
+    res.json(resposta);
   } catch (err) {
     console.error('Erro no dashboard /resumo:', err);
     res.status(500).json({ error: err.message });

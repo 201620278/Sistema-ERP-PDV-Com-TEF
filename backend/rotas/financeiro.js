@@ -349,7 +349,9 @@ router.post('/receber/:id/baixar', (req, res) => {
 
 router.post('/pagar/:id/baixar', (req, res) => {
   const { id } = req.params;
-  db.get('SELECT id, tipo, status FROM financeiro WHERE id = ?', [id], (err, row) => {
+  const { valor, forma_pagamento } = req.body;
+
+  db.get('SELECT id, tipo, status, valor AS valor_total FROM financeiro WHERE id = ?', [id], (err, row) => {
     if (err) {
       res.status(500).json({ success: false, error: err.message });
       return;
@@ -362,8 +364,28 @@ router.post('/pagar/:id/baixar', (req, res) => {
       res.status(400).json({ success: false, error: 'Esta movimentação já foi baixada.' });
       return;
     }
-    const novoStatus = row.tipo === 'receita' ? 'recebido' : 'pago';
-    db.run(`UPDATE financeiro SET status = ?, baixado_em = DATE('now') WHERE id = ?`, [novoStatus, id], (upErr) => {
+
+    const valorPago = parseNumber(valor) || parseNumber(row.valor_total);
+    const valorTotal = parseNumber(row.valor_total);
+
+    let novoStatus;
+    if (valorPago >= valorTotal) {
+      novoStatus = row.tipo === 'receita' ? 'recebido' : 'pago';
+    } else {
+      novoStatus = 'parcial';
+    }
+
+    const updates = ['status = ?', 'baixado_em = DATE(\'now\')'];
+    const params = [novoStatus];
+
+    if (forma_pagamento) {
+      updates.push('forma_pagamento = ?');
+      params.push(forma_pagamento);
+    }
+
+    params.push(id);
+
+    db.run(`UPDATE financeiro SET ${updates.join(', ')} WHERE id = ?`, params, (upErr) => {
       if (upErr) {
         res.status(500).json({ success: false, error: upErr.message });
         return;

@@ -1,6 +1,8 @@
 window.__financeiroPagarState = window.__financeiroPagarState || {
   modalNovaDespesaInstance: null,
-  modalDetalhesPagamento: null
+  modalDetalhesPagamento: null,
+  modalPagamentoInstance: null,
+  contaPagamentoAtual: null
 };
 
 function isAdminFinanceiroPagar() {
@@ -173,10 +175,55 @@ function renderContasPagar(periodo) {
         </div>
       </div>
     </div>
+
+    <div class="modal fade" id="modalPagamento" tabindex="-1" aria-labelledby="modalPagamentoLabel" aria-hidden="true">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="modalPagamentoLabel">Pagar Conta</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+          </div>
+          <form id="formPagamento">
+            <div class="modal-body">
+              <div class="row g-3">
+                <div class="col-12">
+                  <label class="form-label">Valor a Pagar *</label>
+                  <input type="number" class="form-control" id="pagamentoValor" min="0.01" step="0.01" required>
+                  <small class="text-muted">Valor restante: <span id="pagamentoValorRestante">R$ 0,00</span></small>
+                </div>
+
+                <div class="col-12">
+                  <label class="form-label">Forma de Pagamento *</label>
+                  <select class="form-select" id="pagamentoForma" required>
+                    <option value="">Selecione...</option>
+                    <option value="dinheiro">Dinheiro</option>
+                    <option value="pix">PIX</option>
+                    <option value="boleto">Boleto</option>
+                    <option value="cartao_credito">Cartão de Crédito</option>
+                    <option value="cartao_debito">Cartão de Débito</option>
+                    <option value="transferencia">Transferência</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </div>
+              </div>
+
+              <div id="erroPagamento" class="text-danger mt-3"></div>
+            </div>
+
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="submit" class="btn btn-success">Confirmar Pagamento</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   `;
 
   configurarFiltrosPagar();
   inicializarModalNovaDespesa();
+  inicializarModalPagamento();
   carregarContasPagar(coletarFiltrosPagar(periodo));
 }
 
@@ -488,9 +535,130 @@ function inicializarModalDetalhesPagamento() {
   }
 }
 
+function inicializarModalPagamento() {
+  const modalElement = document.getElementById('modalPagamento');
+  const form = document.getElementById('formPagamento');
+
+  if (modalElement && !window.__financeiroPagarState.modalPagamentoInstance) {
+    window.__financeiroPagarState.modalPagamentoInstance = new bootstrap.Modal(modalElement);
+  }
+
+  if (form && !form.dataset.bound) {
+    form.addEventListener('submit', processarPagamento);
+    form.dataset.bound = 'true';
+  }
+}
+
 function pagarConta(id) {
-  if (confirm('Confirmar pagamento desta conta?')) {
-    baixarPagamento(id);
+  abrirModalPagamento(id);
+}
+
+async function abrirModalPagamento(id) {
+  try {
+    const response = await fetch(`/api/financeiro/contas-pagar/${id}/detalhes`, {
+      headers: {
+        'Authorization': 'Bearer ' + localStorage.getItem('token')
+      }
+    });
+
+    const dados = await response.json();
+
+    if (!response.ok || dados.error) {
+      throw new Error(dados.error || 'Erro ao carregar dados da conta.');
+    }
+
+    window.__financeiroPagarState.contaPagamentoAtual = dados;
+
+    const valorInput = document.getElementById('pagamentoValor');
+    const valorRestanteSpan = document.getElementById('pagamentoValorRestante');
+    const formaPagamentoSelect = document.getElementById('pagamentoForma');
+    const erroEl = document.getElementById('erroPagamento');
+
+    if (valorInput) {
+      valorInput.value = dados.valor || 0;
+    }
+
+    if (valorRestanteSpan) {
+      valorRestanteSpan.textContent = formatarMoedaPagar(dados.valor || 0);
+    }
+
+    if (formaPagamentoSelect) {
+      formaPagamentoSelect.value = dados.forma_pagamento || '';
+    }
+
+    if (erroEl) {
+      erroEl.innerText = '';
+    }
+
+    if (window.__financeiroPagarState.modalPagamentoInstance) {
+      window.__financeiroPagarState.modalPagamentoInstance.show();
+    }
+  } catch (error) {
+    console.error('Erro ao abrir modal de pagamento:', error);
+    alert('Erro ao carregar dados da conta: ' + error.message);
+  }
+}
+
+async function processarPagamento(event) {
+  event.preventDefault();
+
+  try {
+    const erroEl = document.getElementById('erroPagamento');
+    if (erroEl) erroEl.innerText = '';
+
+    const valor = Number(document.getElementById('pagamentoValor')?.value || 0);
+    const formaPagamento = document.getElementById('pagamentoForma')?.value || '';
+
+    if (valor <= 0) {
+      if (erroEl) erroEl.innerText = 'O valor deve ser maior que zero.';
+      return;
+    }
+
+    if (!formaPagamento) {
+      if (erroEl) erroEl.innerText = 'Selecione a forma de pagamento.';
+      return;
+    }
+
+    const conta = window.__financeiroPagarState.contaPagamentoAtual;
+    if (!conta) {
+      if (erroEl) erroEl.innerText = 'Dados da conta não encontrados.';
+      return;
+    }
+
+    const response = await fetch(`/api/financeiro/pagar/${conta.id}/baixar`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + localStorage.getItem('token')
+      },
+      body: JSON.stringify({
+        valor: valor,
+        forma_pagamento: formaPagamento
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'Erro ao processar pagamento.');
+    }
+
+    if (window.__financeiroPagarState.modalPagamentoInstance) {
+      window.__financeiroPagarState.modalPagamentoInstance.hide();
+    }
+
+    alert('Pagamento realizado com sucesso!');
+
+    const periodo = obterPeriodoFinanceiro();
+    carregarContasPagar(coletarFiltrosPagar(periodo));
+
+    if (typeof carregarDashboardFinanceiro === 'function') {
+      carregarDashboardFinanceiro(periodo);
+    }
+  } catch (error) {
+    console.error('Erro ao processar pagamento:', error);
+    const erroEl = document.getElementById('erroPagamento');
+    if (erroEl) erroEl.innerText = error.message || 'Erro ao processar pagamento.';
   }
 }
 

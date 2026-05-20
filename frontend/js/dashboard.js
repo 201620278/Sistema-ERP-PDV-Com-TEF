@@ -87,6 +87,24 @@ function montarListaFormasPagamento(lista) {
     `).join('');
 }
 
+function montarListaValidadeProdutos(lista) {
+    if (!Array.isArray(lista) || lista.length === 0) {
+        return '<div class="text-muted">Nenhum produto encontrado.</div>';
+    }
+
+    return lista.map(item => `
+        <div class="d-flex justify-content-between border-bottom py-2">
+            <div>
+                <strong>${item.nome}</strong><br>
+                <small>Estoque: ${item.estoque_atual ?? 0}</small>
+            </div>
+            <div class="text-end">
+                <strong>${item.data_validade || '-'}</strong>
+            </div>
+        </div>
+    `).join('');
+}
+
 function preencherDashboard(data) {
     const periodo = data.periodo || {};
     const labelPeriodo = document.getElementById('dashboardPeriodoLabel');
@@ -129,6 +147,16 @@ function preencherDashboard(data) {
     if (formas) {
         formas.innerHTML = montarListaFormasPagamento(data.vendas_por_forma_pagamento);
     }
+
+    const proximoVencimento = document.getElementById('dashboardProdutosProximoVencimento');
+    const vencidos = document.getElementById('dashboardProdutosVencidos');
+
+    if (proximoVencimento) {
+        proximoVencimento.innerHTML = montarListaValidadeProdutos(data.produtos_proximo_vencimento);
+    }
+    if (vencidos) {
+        vencidos.innerHTML = montarListaValidadeProdutos(data.produtos_vencidos);
+    }
 }
 
 function mostrarErroDashboard(mensagem) {
@@ -144,17 +172,70 @@ function mostrarErroDashboard(mensagem) {
     });
 }
 
-async function carregarDashboard() {
+function dataHojeDashboard() {
+    return new Date().toISOString().slice(0, 10);
+}
+
+function dataDiasAtrasDashboard(dias) {
+    const data = new Date();
+    data.setDate(data.getDate() - Number(dias));
+    return data.toISOString().slice(0, 10);
+}
+
+function prepararFiltroDashboard() {
+    const filtro = document.getElementById('dashboardFiltroRapido');
+    const inicio = document.getElementById('dashboardDataInicio');
+    const fim = document.getElementById('dashboardDataFim');
+
+    if (!filtro || !inicio || !fim) return;
+
+    const hoje = dataHojeDashboard();
+
+    if (!filtro.value) {
+        filtro.value = '7';
+    }
+
+    if (filtro.value === 'hoje') {
+        inicio.value = hoje;
+        fim.value = hoje;
+    } else if (filtro.value === '30') {
+        inicio.value = dataDiasAtrasDashboard(30);
+        fim.value = hoje;
+    } else if (filtro.value === '7') {
+        inicio.value = dataDiasAtrasDashboard(7);
+        fim.value = hoje;
+    }
+
+    const personalizado = filtro.value === 'personalizado';
+
+    inicio.disabled = !personalizado;
+    fim.disabled = !personalizado;
+}
+
+function carregarDashboardComFiltro() {
+    prepararFiltroDashboard();
+
+    const inicio = document.getElementById('dashboardDataInicio')?.value || dataDiasAtrasDashboard(7);
+    const fim = document.getElementById('dashboardDataFim')?.value || dataHojeDashboard();
+
+    carregarDashboard(inicio, fim);
+}
+
+async function carregarDashboard(inicio = null, fim = null) {
     try {
         const apiUrl = (typeof API_URL === 'string' && API_URL.trim() !== '')
             ? API_URL
             : `${window.location.origin}/api`;
 
-        const response = await fetch(`${apiUrl}/dashboard/resumo`, {
+        const dataInicio = inicio || dataDiasAtrasDashboard(7);
+        const dataFim = fim || dataHojeDashboard();
+
+        const response = await fetch(`${apiUrl}/dashboard/resumo?inicio=${dataInicio}&fim=${dataFim}`, {
             headers: {
                 Authorization: 'Bearer ' + (localStorage.getItem('token') || '')
             }
         });
+
         const data = await response.json();
 
         if (!response.ok) {
@@ -162,6 +243,7 @@ async function carregarDashboard() {
         }
 
         preencherDashboard(data);
+
     } catch (error) {
         console.error('Erro dashboard:', error);
         mostrarErroDashboard(error.message || 'Erro ao carregar dashboard.');
@@ -169,8 +251,21 @@ async function carregarDashboard() {
 }
 
 function initDashboard() {
-    carregarDashboard();
+    const filtro = document.getElementById('dashboardFiltroRapido');
+
+    if (filtro) {
+        filtro.addEventListener('change', () => {
+            prepararFiltroDashboard();
+            if (filtro.value !== 'personalizado') {
+                carregarDashboardComFiltro();
+            }
+        });
+    }
+
+    prepararFiltroDashboard();
+    carregarDashboardComFiltro();
 }
 
 window.initDashboard = initDashboard;
 window.carregarDashboard = carregarDashboard;
+window.carregarDashboardComFiltro = carregarDashboardComFiltro;
