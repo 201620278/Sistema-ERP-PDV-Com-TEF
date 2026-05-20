@@ -431,6 +431,23 @@ function criarTabelas() {
       else console.log('Tabela compras_itens criada/verificada');
     });
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS compras_devolucoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        compra_id INTEGER NOT NULL,
+        compra_item_id INTEGER NOT NULL,
+        produto_id INTEGER NOT NULL,
+        quantidade DECIMAL(10,3) NOT NULL,
+        valor_unitario DECIMAL(10,2) NOT NULL,
+        valor_total DECIMAL(10,2) NOT NULL,
+        motivo TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (err) => {
+      if (err) console.error('Erro ao criar tabela compras_devolucoes:', err);
+      else console.log('Tabela compras_devolucoes criada/verificada');
+    });
+
     // Tabela de vendas
     db.run(`
       CREATE TABLE IF NOT EXISTS vendas (

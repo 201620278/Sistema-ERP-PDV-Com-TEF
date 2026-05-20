@@ -634,29 +634,34 @@ router.get('/', (req, res) => {
 
 router.get('/:id', (req, res) => {
   const { id } = req.params;
-  db.get('SELECT * FROM compras WHERE id = ?', [id], (err, compra) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!compra) return res.status(404).json({ error: 'Compra não encontrada.' });
 
-    db.all(`
-      SELECT
-        ci.*,
-        COALESCE(p.nome, ci.descricao_produto) AS produto_nome,
-        p.codigo AS produto_codigo,
-        COALESCE((
-          SELECT SUM(cd.quantidade)
-          FROM compras_devolucoes cd
-          WHERE cd.compra_item_id = ci.id
-        ), 0) AS quantidade_devolvida
-      FROM compras_itens ci
-      LEFT JOIN produtos p ON ci.produto_id = p.id
-      WHERE ci.compra_id = ?
-      ORDER BY ci.id
-    `, [id], (itErr, itens) => {
-      if (itErr) return res.status(500).json({ error: itErr.message });
-      db.all('SELECT * FROM financeiro WHERE compra_id = ? ORDER BY numero_parcela, vencimento', [id], (finErr, financeiro) => {
-        if (finErr) return res.status(500).json({ error: finErr.message });
-        res.json({ ...compra, itens, financeiro });
+  garantirTabelaDevolucoesCompra((tableErr) => {
+    if (tableErr) return res.status(500).json({ error: tableErr.message });
+
+    db.get('SELECT * FROM compras WHERE id = ?', [id], (err, compra) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!compra) return res.status(404).json({ error: 'Compra não encontrada.' });
+
+      db.all(`
+        SELECT
+          ci.*,
+          COALESCE(p.nome, ci.descricao_produto) AS produto_nome,
+          p.codigo AS produto_codigo,
+          COALESCE((
+            SELECT SUM(cd.quantidade)
+            FROM compras_devolucoes cd
+            WHERE cd.compra_item_id = ci.id
+          ), 0) AS quantidade_devolvida
+        FROM compras_itens ci
+        LEFT JOIN produtos p ON ci.produto_id = p.id
+        WHERE ci.compra_id = ?
+        ORDER BY ci.id
+      `, [id], (itErr, itens) => {
+        if (itErr) return res.status(500).json({ error: itErr.message });
+        db.all('SELECT * FROM financeiro WHERE compra_id = ? ORDER BY numero_parcela, vencimento', [id], (finErr, financeiro) => {
+          if (finErr) return res.status(500).json({ error: finErr.message });
+          res.json({ ...compra, itens, financeiro });
+        });
       });
     });
   });

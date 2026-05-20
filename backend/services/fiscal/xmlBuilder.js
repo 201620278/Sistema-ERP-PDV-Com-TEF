@@ -223,6 +223,40 @@ function montarDestinatarioNFCe(cpfCnpj) {
   return '';
 }
 
+function calcularDigitoGTIN(codigoSemDigito) {
+  const numeros = String(codigoSemDigito).replace(/\D/g, "");
+  let soma = 0;
+  let peso = 3;
+
+  for (let i = numeros.length - 1; i >= 0; i--) {
+    soma += Number(numeros[i]) * peso;
+    peso = peso === 3 ? 1 : 3;
+  }
+
+  const resto = soma % 10;
+  return resto === 0 ? 0 : 10 - resto;
+}
+
+function gtinValido(codigo) {
+  const gtin = String(codigo || "").replace(/\D/g, "");
+
+  if (![8, 12, 13, 14].includes(gtin.length)) {
+    return false;
+  }
+
+  // Bloqueia códigos internos/pesáveis usados por mercados.
+  // Ex: 2000000000017, 210..., 220..., 29...
+  if (gtin.startsWith("2")) {
+    return false;
+  }
+
+  const corpo = gtin.slice(0, -1);
+  const digitoInformado = Number(gtin.slice(-1));
+  const digitoCalculado = calcularDigitoGTIN(corpo);
+
+  return digitoInformado === digitoCalculado;
+}
+
 function obterEANFiscal(produto) {
   const codigo = String(
     produto?.codigo_barras ||
@@ -236,7 +270,7 @@ function obterEANFiscal(produto) {
     return "SEM GTIN";
   }
 
-  if (![8, 12, 13, 14].includes(codigo.length)) {
+  if (!gtinValido(codigo)) {
     return "SEM GTIN";
   }
 
