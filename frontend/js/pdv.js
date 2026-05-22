@@ -137,7 +137,6 @@ function formaPagamentoUsaTEF(forma) {
         'cartao_debito',
         'credito',
         'debito',
-        'pix',
         'pix_tef',
         'tef'
     ].includes(f);
@@ -501,7 +500,7 @@ function bindEventosPDV() {
         }
     });
 
-    $('#descontoPdv').off('input').on('input', function() {
+    $('#descontoPdv, #acrescimoPdv').off('input').on('input', function() {
         calcularTotal();
         calcularTrocoPDV();
     });
@@ -907,7 +906,12 @@ function calcularSubtotal() {
 function calcularTotalValor() {
     const subtotal = calcularSubtotal();
     const desconto = parseFloat($('#descontoPdv').val()) || 0;
-    return Math.max(0, subtotal - desconto);
+    const acrescimo = parseFloat($('#acrescimoPdv').val()) || 0;
+    return Math.max(0, subtotal - desconto + acrescimo);
+}
+
+function obterTotalVendaPDV() {
+    return Math.round(calcularTotalValor() * 100) / 100;
 }
 
 function calcularTotal() {
@@ -1311,11 +1315,7 @@ function validarCpfCnpjNota(valor) {
 }
 
 function abrirPagamentoMisto() {
-    const totalVenda = carrinho.reduce((soma, item) => {
-        const qtd = Number(item.quantidade || 0);
-        const preco = Number(item.preco_unitario || item.preco || 0);
-        return soma + (qtd * preco);
-    }, 0);
+    const totalVenda = obterTotalVendaPDV();
 
     function moeda(v) {
         return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
@@ -1427,15 +1427,30 @@ function abrirPagamentoMisto() {
 
         $('.pagamento-misto-input').on('input', atualizarTotais);
 
-        // Auto-preencher segundo campo quando o primeiro perder foco
         const $inputs = $('.pagamento-misto-input');
-        if ($inputs.length >= 2) {
+        if (tipo === 'dinheiro_pix' && $inputs.length >= 2) {
+            const $dinheiro = $inputs.filter('[data-forma="dinheiro"]');
+            const $pix = $inputs.filter('[data-forma="pix"]');
+
+            function preencherRestantePixMisto() {
+                const valDinheiro = Number($dinheiro.val() || 0);
+                const restante = Math.round((totalVenda - valDinheiro) * 100) / 100;
+
+                if (valDinheiro > 0 && restante > 0) {
+                    $pix.val(restante.toFixed(2));
+                } else if (restante <= 0) {
+                    $pix.val('0.00');
+                }
+                atualizarTotais();
+            }
+
+            $dinheiro.on('input blur', preencherRestantePixMisto);
+        } else if ($inputs.length >= 2) {
             $inputs.first().on('blur', function() {
                 const valPrimeiro = Number($(this).val() || 0);
                 const $segundo = $inputs.eq(1);
                 const valSegundo = Number($segundo.val() || 0);
 
-                // Só preenche se o segundo estiver vazio/zero e o primeiro tiver valor
                 if (valPrimeiro > 0 && valSegundo === 0) {
                     const restante = totalVenda - valPrimeiro;
                     if (restante > 0) {
@@ -1487,6 +1502,20 @@ function abrirPagamentoMisto() {
     });
 
     $('#btnConfirmarPagamentoMisto').on('click', function () {
+        const tipoMisto = $('#tipoPagamentoMisto').val();
+
+        if (tipoMisto === 'dinheiro_pix') {
+            const $dinheiro = $('#pgDinheiro');
+            const $pix = $('#pgPix');
+            const valDinheiro = Number($dinheiro.val() || 0);
+            const valPixAtual = Number($pix.val() || 0);
+            const restante = Math.round((totalVenda - valDinheiro) * 100) / 100;
+
+            if (valDinheiro > 0 && valPixAtual === 0 && restante > 0) {
+                $pix.val(restante.toFixed(2));
+            }
+        }
+
         pagamentosMistos = [];
 
         $('.pagamento-misto-input').each(function () {
@@ -1503,11 +1532,26 @@ function abrirPagamentoMisto() {
 
         formaPagamentoSelecionadaPDV = 'misto';
 
+        const pagamentoPix = pagamentosMistos.find(p => p.forma_pagamento === 'pix');
+        const valorPix = pagamentoPix ? Number(pagamentoPix.valor) : 0;
+
         if (document.activeElement) {
             document.activeElement.blur();
         }
 
         modal.hide();
+
+        if (tipoMisto === 'dinheiro_pix' && valorPix > 0) {
+            setTimeout(() => {
+                iniciarPixAutomaticoPDV(valorPix, {
+                    modoMisto: true,
+                    onPago: () => {
+                        setTimeout(() => mostrarModalDecisaoFiscal(), 300);
+                    }
+                });
+            }, 300);
+            return;
+        }
 
         setTimeout(() => {
             mostrarModalDecisaoFiscal();
@@ -2486,12 +2530,7 @@ function confirmarQuantidadeProduto(produto, callback, modal) {
 }
 
 function abrirTelaPagamento() {
-    const totalVenda = carrinho.reduce((soma, item) => {
-        return soma + (
-            Number(item.quantidade || 0) *
-            Number(item.preco || item.preco_unitario || 0)
-        );
-    }, 0);
+    const totalVenda = obterTotalVendaPDV();
 
     $('#modal-container').html(`
         <div class="modal fade" id="modalPagamentoPDV" tabindex="-1">
@@ -2686,9 +2725,12 @@ function selecionarPagamentoPDV(forma) {
         modal.hide();
     }
 
-    // Se for dinheiro, mostrar modal para informar valor recebido
     if (forma === 'dinheiro') {
         mostrarModalTroco();
+    } else if (forma === 'pix') {
+        setTimeout(() => {
+            iniciarPixAutomaticoPDV();
+        }, 300);
     } else if (forma === 'prazo') {
         mostrarModalClientePrazo();
     } else {
@@ -2698,13 +2740,188 @@ function selecionarPagamentoPDV(forma) {
     }
 }
 
+let intervaloConsultaPixPDV = null;
+
+async function iniciarPixAutomaticoPDV(valorPix, opcoes = {}) {
+    const totalVenda = valorPix != null && Number(valorPix) > 0
+        ? Math.round(Number(valorPix) * 100) / 100
+        : obterTotalVendaPDV();
+
+    if (totalVenda <= 0) {
+        showNotification('O valor do Pix deve ser maior que zero.', 'warning');
+        return;
+    }
+
+    try {
+        showNotification('Gerando cobrança Pix...', 'info');
+
+        const resp = await fetch(`${API_URL}/pix/criar-cobranca`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+                valor: totalVenda,
+                descricao: opcoes.modoMisto ? 'Venda PDV - Pagamento misto' : 'Venda PDV'
+            })
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok || !data.success) {
+            throw new Error(data.error || 'Erro ao gerar Pix.');
+        }
+
+        mostrarModalAguardandoPixPDV(data.cobranca, totalVenda, opcoes);
+        consultarPixAteConfirmarPDV(data.cobranca.txid, opcoes);
+
+    } catch (err) {
+        console.error('Erro Pix automático:', err);
+        showNotification(err.message || 'Erro ao gerar Pix.', 'danger');
+    }
+}
+
+function mostrarModalAguardandoPixPDV(cobranca, totalVenda, opcoes = {}) {
+    const qrImg = cobranca.qrCodeBase64
+        ? `<img src="data:image/png;base64,${cobranca.qrCodeBase64}" alt="QR Code Pix" style="width:320px;height:320px;max-width:100%;display:block;">`
+        : `<div class="alert alert-warning py-2 mb-0 small">QR Code não retornado. Use o Pix Copia e Cola.</div>`;
+
+    $('#modal-container').html(`
+        <div class="modal fade" id="modalPixAutomaticoPDV" tabindex="-1" data-bs-backdrop="static">
+            <div class="modal-dialog modal-dialog-centered" style="max-width:380px;">
+                <div class="modal-content border-0 shadow" style="border-radius:12px;overflow:hidden;">
+                    <div class="modal-header text-white py-2 px-3" style="background:#0f766e;">
+                        <div>
+                            <h6 class="modal-title mb-0 fw-bold">Pagamento Pix Automático</h6>
+                            <small class="opacity-75" style="font-size:0.75rem;">Aguardando confirmação bancária</small>
+                        </div>
+                    </div>
+
+                    <div class="modal-body p-3 text-center">
+                        <small class="text-muted">${opcoes.modoMisto ? 'Valor restante em Pix' : 'Total da venda'}</small>
+                        <div class="mb-2" style="color:#0f766e;font-weight:700;font-size:1.5rem;">
+                            R$ ${Number(totalVenda).toFixed(2).replace('.', ',')}
+                        </div>
+                        ${opcoes.modoMisto ? '<p class="text-muted small mb-2">Dinheiro já informado. Pague o restante via Pix.</p>' : ''}
+
+                        <div class="bg-white border rounded p-1 d-inline-block mb-2">
+                            ${qrImg}
+                        </div>
+
+                        <div class="alert alert-info py-1 px-2 mb-2 small">
+                            <strong>Status:</strong>
+                            <span id="statusPixPDV">Aguardando pagamento...</span>
+                        </div>
+
+                        <label class="form-label fw-bold small mb-1">Pix Copia e Cola</label>
+                        <textarea id="pixCopiaColaPDV" class="form-control form-control-sm" rows="2" readonly style="font-size:0.7rem;">${cobranca.copiaCola || ''}</textarea>
+
+                        <div class="d-grid gap-1 mt-2">
+                            <button class="btn btn-outline-primary btn-sm" onclick="copiarPixCopiaColaPDV()">
+                                Copiar Pix Copia e Cola
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="cancelarAguardandoPixPDV()">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+
+    const modal = new bootstrap.Modal(document.getElementById('modalPixAutomaticoPDV'));
+    modal.show();
+}
+
+function consultarPixAteConfirmarPDV(txid, opcoes = {}) {
+    if (intervaloConsultaPixPDV) {
+        clearInterval(intervaloConsultaPixPDV);
+    }
+
+    intervaloConsultaPixPDV = setInterval(async () => {
+        try {
+            const resp = await fetch(`${API_URL}/pix/status/${encodeURIComponent(txid)}`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            const data = await resp.json();
+
+            if (!resp.ok || !data.success) {
+                throw new Error(data.error || 'Erro ao consultar Pix.');
+            }
+
+            const status = data.status.status;
+
+            $('#statusPixPDV').text(status);
+
+            if (status === 'PAGO') {
+                clearInterval(intervaloConsultaPixPDV);
+                intervaloConsultaPixPDV = null;
+
+                $('#statusPixPDV').text('Pix confirmado!');
+
+                setTimeout(() => {
+                    const modalEl = document.getElementById('modalPixAutomaticoPDV');
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+
+                    if (modal) modal.hide();
+
+                    if (typeof opcoes.onPago === 'function') {
+                        opcoes.onPago();
+                    } else {
+                        formaPagamentoSelecionadaPDV = 'pix';
+                        setTimeout(() => {
+                            mostrarModalDecisaoFiscal();
+                        }, 300);
+                    }
+                }, 800);
+            }
+
+            if (['EXPIRADO', 'CANCELADO', 'ERRO'].includes(status)) {
+                clearInterval(intervaloConsultaPixPDV);
+                intervaloConsultaPixPDV = null;
+                showNotification(`Pix ${status}. Gere uma nova cobrança.`, 'danger');
+            }
+
+        } catch (err) {
+            console.error('Erro ao consultar Pix:', err);
+        }
+    }, 3000);
+}
+
+function copiarPixCopiaColaPDV() {
+    const texto = $('#pixCopiaColaPDV').val();
+
+    navigator.clipboard.writeText(texto)
+        .then(() => showNotification('Pix Copia e Cola copiado.', 'success'))
+        .catch(() => {
+            $('#pixCopiaColaPDV').select();
+            document.execCommand('copy');
+            showNotification('Pix Copia e Cola copiado.', 'success');
+        });
+}
+
+function cancelarAguardandoPixPDV() {
+    if (intervaloConsultaPixPDV) {
+        clearInterval(intervaloConsultaPixPDV);
+        intervaloConsultaPixPDV = null;
+    }
+
+    const modalEl = document.getElementById('modalPixAutomaticoPDV');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+
+    if (modal) {
+        modal.hide();
+    }
+
+    showNotification('Pagamento Pix cancelado no PDV.', 'warning');
+}
+
 function mostrarModalClientePrazo() {
-    const totalVenda = carrinho.reduce((soma, item) => {
-        return soma + (
-            Number(item.quantidade || 0) *
-            Number(item.preco || item.preco_unitario || 0)
-        );
-    }, 0);
+    const totalVenda = obterTotalVendaPDV();
 
     const hoje = new Date();
     const primeiroVencimento = new Date(hoje.getFullYear(), hoje.getMonth() + 1, hoje.getDate());
@@ -2849,12 +3066,7 @@ function confirmarPagamentoPrazo() {
 }
 
 function mostrarModalTroco() {
-    const totalVenda = carrinho.reduce((soma, item) => {
-        return soma + (
-            Number(item.quantidade || 0) *
-            Number(item.preco || item.preco_unitario || 0)
-        );
-    }, 0);
+    const totalVenda = obterTotalVendaPDV();
 
     $('#modal-container').html(`
         <div class="modal fade" id="trocoModal" tabindex="-1">
@@ -2923,12 +3135,7 @@ function mostrarModalTroco() {
 }
 
 function confirmarTroco() {
-    const totalVenda = carrinho.reduce((soma, item) => {
-        return soma + (
-            Number(item.quantidade || 0) *
-            Number(item.preco || item.preco_unitario || 0)
-        );
-    }, 0);
+    const totalVenda = obterTotalVendaPDV();
 
     const valorRecebido = Number(String($('#valorRecebido').val()).replace(',', '.')) || 0;
 

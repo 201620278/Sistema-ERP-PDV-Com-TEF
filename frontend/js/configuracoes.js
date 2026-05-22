@@ -81,7 +81,19 @@ function renderConfiguracoes(configuracoes, usuarios) {
         'backup_google_refresh_token'
     ]);
 
-    configuracoes = configuracoes.filter(config => !fiscalConfigKeys.has(config.chave) && !backupConfigKeys.has(config.chave) && config.chave !== 'endereco');
+    // Chaves internas do Pix — configuradas apenas pelo modal "Configurar Pix Automático"
+    const pixConfigKeys = new Set([
+        'pix_automatico_ativo',
+        'pix_provedor_ativo',
+        'pix_configs_json'
+    ]);
+
+    configuracoes = configuracoes.filter(config =>
+        !fiscalConfigKeys.has(config.chave) &&
+        !backupConfigKeys.has(config.chave) &&
+        !pixConfigKeys.has(config.chave) &&
+        config.chave !== 'endereco'
+    );
 
     const ordemCamposEmpresa = [
         'nome_empresa',
@@ -197,6 +209,21 @@ function renderConfiguracoes(configuracoes, usuarios) {
         </div>
 
         <!-- Campo de imagem de fundo do login (após configurações fiscais) -->
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="fas fa-qrcode"></i> Pix Automático
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-2">
+                    Configure o banco/provedor que será usado para gerar QR Code Pix automático no PDV.
+                </p>
+                <button class="btn btn-success" onclick="abrirModalPixAutomatico()">
+                    <i class="fas fa-qrcode"></i> Configurar Pix Automático
+                </button>
+            </div>
+        </div>
+
         <div class="card mt-3">
             <div class="card-header">
                 <i class="fas fa-image"></i> Personalização da Tela de Login
@@ -293,6 +320,197 @@ function renderConfiguracoes(configuracoes, usuarios) {
     carregarPastaBackup();
     setupEscolherPastaListener();
     carregarImpressoraCupom();
+}
+
+// --- PIX AUTOMÁTICO ---
+let catalogoPixAutomatico = {};
+
+function headersPixApi() {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('token');
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+}
+
+async function abrirModalPixAutomatico() {
+    try {
+        const respProvedores = await fetch(`${API_URL}/pix/provedores`, {
+            headers: headersPixApi()
+        });
+        const dadosProvedores = await respProvedores.json();
+
+        const respConfig = await fetch(`${API_URL}/pix/config`, {
+            headers: headersPixApi()
+        });
+        const dadosConfig = await respConfig.json();
+
+        if (!dadosProvedores.success || !dadosConfig.success) {
+            throw new Error('Erro ao carregar configuração Pix.');
+        }
+
+        catalogoPixAutomatico = dadosProvedores.provedores || {};
+
+        const config = dadosConfig.config || {};
+        const provedorAtivo = config.provedor || 'mercadopago';
+        const configs = config.configs || {};
+
+        const options = Object.entries(catalogoPixAutomatico).map(([key, item]) => {
+            return `<option value="${key}" ${key === provedorAtivo ? 'selected' : ''}>${item.nome}</option>`;
+        }).join('');
+
+        $('#modal-container').html(`
+            <div class="modal fade" id="modalPixConfig" tabindex="-1">
+                <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header bg-success text-white">
+                            <h5 class="modal-title">
+                                <i class="fas fa-qrcode"></i> Configurar Pix Automático
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="pixAutoAtivo" ${config.ativo ? 'checked' : ''}>
+                                <label class="form-check-label fw-bold" for="pixAutoAtivo">
+                                    Ativar Pix automático no PDV
+                                </label>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Banco/Provedor Pix</label>
+                                <select id="pixProvedorAtivo" class="form-select" onchange="renderCamposPixAutomatico()">
+                                    ${options}
+                                </select>
+                            </div>
+
+                            <div id="camposPixAutomatico"></div>
+
+                            <div class="alert alert-warning mt-3 mb-0">
+                                <strong>Atenção:</strong> Mercado Pago já usa Access Token.
+                                Stone e bancos podem exigir contrato/API específica, token, webhook e dados da conta PJ.
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button class="btn btn-outline-primary" onclick="testarPixAutomatico()">Testar/Salvar</button>
+                            <button class="btn btn-success" onclick="salvarPixAutomatico()">Salvar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+
+        window.pixConfigsAtuais = configs;
+
+        renderCamposPixAutomatico();
+
+        const modal = new bootstrap.Modal(document.getElementById('modalPixConfig'));
+        modal.show();
+
+    } catch (err) {
+        console.error(err);
+        showNotification(err.message || 'Erro ao abrir configuração Pix.', 'danger');
+    }
+}
+
+function renderCamposPixAutomatico() {
+    const provedor = $('#pixProvedorAtivo').val();
+    const item = catalogoPixAutomatico[provedor];
+
+    if (!item) return;
+
+    const config = (window.pixConfigsAtuais || {})[provedor] || {};
+
+    if (!item.campos || item.campos.length === 0) {
+        $('#camposPixAutomatico').html(`
+            <div class="alert alert-info">
+                Este provedor já está listado, mas a integração será adicionada depois.
+            </div>
+        `);
+        return;
+    }
+
+    const html = item.campos.map(campo => {
+        const valor = config[campo.name] ?? campo.default ?? '';
+        return `
+            <div class="mb-3">
+                <label class="form-label">${campo.label}${campo.required ? ' *' : ''}</label>
+                <input
+                    type="${campo.type || 'text'}"
+                    class="form-control campo-pix-auto"
+                    data-name="${campo.name}"
+                    value="${escapeHtml(String(valor))}"
+                    ${campo.required ? 'required' : ''}
+                >
+            </div>
+        `;
+    }).join('');
+
+    $('#camposPixAutomatico').html(html);
+}
+
+function coletarConfigPixAutomatico() {
+    const provedor = $('#pixProvedorAtivo').val();
+    const item = catalogoPixAutomatico[provedor] || {};
+    const camposPorNome = {};
+    (item.campos || []).forEach(c => { camposPorNome[c.name] = c; });
+
+    const configs = { ...(window.pixConfigsAtuais || {}) };
+    configs[provedor] = {};
+
+    $('.campo-pix-auto').each(function() {
+        const name = $(this).data('name');
+        let valor = $(this).val();
+        const campo = camposPorNome[name];
+        if (campo?.type === 'number') {
+            valor = Number(valor) || Number(campo.default) || 0;
+        } else {
+            valor = String(valor || '').trim();
+        }
+        configs[provedor][name] = valor;
+    });
+
+    window.pixConfigsAtuais = configs;
+
+    return {
+        ativo: $('#pixAutoAtivo').is(':checked'),
+        provedor,
+        configs
+    };
+}
+
+async function salvarPixAutomatico() {
+    try {
+        const payload = coletarConfigPixAutomatico();
+
+        const resp = await fetch(`${API_URL}/pix/config`, {
+            method: 'POST',
+            headers: headersPixApi(),
+            body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok || !data.success) {
+            throw new Error(data.error || 'Erro ao salvar Pix.');
+        }
+
+        showNotification('Configuração Pix salva com sucesso.', 'success');
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('modalPixConfig'));
+        if (modal) modal.hide();
+
+    } catch (err) {
+        console.error(err);
+        showNotification(err.message || 'Erro ao salvar Pix.', 'danger');
+    }
+}
+
+async function testarPixAutomatico() {
+    await salvarPixAutomatico();
+    showNotification('Configuração salva. Faça uma venda teste em Pix para validar a cobrança.', 'info');
 }
 
 function escapeHtml(s) {

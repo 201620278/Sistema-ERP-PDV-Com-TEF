@@ -277,6 +277,62 @@ function obterEANFiscal(produto) {
   return codigo;
 }
 
+function ratearDescontoNosItens(itens, descontoTotal) {
+  const desconto = Number(descontoTotal || 0);
+
+  if (!desconto || desconto <= 0 || !Array.isArray(itens) || itens.length === 0) {
+    return itens.map(item => ({
+      ...item,
+      desconto_rateado: 0
+    }));
+  }
+
+  const totalProdutos = itens.reduce((soma, item) => {
+    const qtd = Number(item.quantidade || item.qCom || 1);
+    const valorUnit = Number(item.preco_unitario || item.valor_unitario || item.vUnCom || item.preco || 0);
+    const subtotal = item.subtotal != null
+      ? Number(item.subtotal)
+      : qtd * valorUnit;
+    return soma + subtotal;
+  }, 0);
+
+  if (totalProdutos <= 0) {
+    return itens.map(item => ({
+      ...item,
+      desconto_rateado: 0
+    }));
+  }
+
+  let somaDescontos = 0;
+
+  const itensComDesconto = itens.map((item, index) => {
+    const qtd = Number(item.quantidade || item.qCom || 1);
+    const valorUnit = Number(item.preco_unitario || item.valor_unitario || item.vUnCom || item.preco || 0);
+    const totalItem = item.subtotal != null
+      ? round2(Number(item.subtotal))
+      : round2(qtd * valorUnit);
+
+    let descontoItem;
+
+    if (index === itens.length - 1) {
+      descontoItem = round2(desconto - somaDescontos);
+    } else {
+      descontoItem = round2((totalItem / totalProdutos) * desconto);
+      somaDescontos += descontoItem;
+    }
+
+    if (descontoItem < 0) descontoItem = 0;
+    if (descontoItem > totalItem) descontoItem = totalItem;
+
+    return {
+      ...item,
+      desconto_rateado: descontoItem
+    };
+  });
+
+  return itensComDesconto;
+}
+
 function buildNfceXml({ config, venda, itens, numero }) {
   const dhEmi = nowDhEmi();
   const aamm = dhEmi.slice(2, 4) + dhEmi.slice(5, 7);
@@ -361,16 +417,20 @@ function buildNfceXml({ config, venda, itens, numero }) {
     : '';
 
   let vProd = 0;
-  const vDesc = round2(venda.desconto || 0);
+  const descontoVenda = round2(venda.desconto || venda.desconto_total || 0);
+  const itensVenda = ratearDescontoNosItens(itens || [], descontoVenda);
+  let vDesc = 0;
   let vNF = 0;
 
   const descricaoHomologacao = 'NOTA FISCAL EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
 
-  const dets = (itens || []).map((item, idx) => {
+  const dets = itensVenda.map((item, idx) => {
     const quantidade = Number(item.quantidade || 0);
     const valorUnitario = Number(item.preco_unitario || 0);
     const subtotal = round2(item.subtotal != null ? item.subtotal : quantidade * valorUnitario);
+    const descontoItem = round2(item.desconto_rateado || 0);
     vProd += subtotal;
+    vDesc += descontoItem;
 
     const ncmRaw = onlyDigits(item.ncm || item.produto_ncm || '');
     if (!ncmRaw || ncmRaw.length !== 8) {
@@ -406,6 +466,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
           <uTrib>${xmlEscape(unidade)}</uTrib>
           <qTrib>${formatNumber(quantidade, 4)}</qTrib>
           <vUnTrib>${formatNumber(valorUnitario, 10)}</vUnTrib>
+          ${descontoItem > 0 ? `<vDesc>${formatNumber(descontoItem, 2)}</vDesc>` : ''}
           <indTot>1</indTot>
         </prod>
         <imposto>
@@ -430,6 +491,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
     `;
   }).join('');
 
+  vDesc = round2(vDesc);
   vNF = round2(vProd - vDesc);
 
   const pagamentosVenda = venda.pagamentos && venda.pagamentos.length > 0
@@ -528,6 +590,7 @@ function buildNfceXml({ config, venda, itens, numero }) {
 
 module.exports = {
   buildNfceXml,
+  ratearDescontoNosItens,
   gerarQrCodeUrl,
   montarInfNFeSupl,
   anexarInfNFeSupl,

@@ -127,6 +127,7 @@ const impressaoRoutes = require('./rotas/impressao');
 const caixaRoutes = require('./rotas/caixa');
 const backupRoutes = require('./rotas/backup');
 const tefRoutes = require('./rotas/tef');
+const pixRoutes = require('./rotas/pix');
 const dashboardRoutes = require('./rotas/dashboard');
 // const usuariosRoutes = require('./rotas/usuarios');
 
@@ -145,6 +146,7 @@ app.use('/api/impressao', verificarToken, impressaoRoutes);
 app.use('/api/caixa', verificarToken, caixaRoutes);
 app.use('/api/backup', verificarToken, backupRoutes);
 app.use('/api/tef', tefRoutes);
+app.use('/api/pix', verificarToken, pixRoutes);
 // app.use('/api/usuarios', verificarToken, usuariosRoutes);
 
 // Rota principal (protegida)
