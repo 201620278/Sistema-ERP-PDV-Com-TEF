@@ -1542,13 +1542,18 @@ function abrirPagamentoMisto() {
         modal.hide();
 
         if (tipoMisto === 'dinheiro_pix' && valorPix > 0) {
-            setTimeout(() => {
-                iniciarPixAutomaticoPDV(valorPix, {
-                    modoMisto: true,
-                    onPago: () => {
-                        setTimeout(() => mostrarModalDecisaoFiscal(), 300);
-                    }
-                });
+            setTimeout(async () => {
+                const ativo = await pixAutomaticoHabilitado();
+                if (ativo) {
+                    iniciarPixAutomaticoPDV(valorPix, {
+                        modoMisto: true,
+                        onPago: () => {
+                            setTimeout(() => mostrarModalDecisaoFiscal(), 300);
+                        }
+                    });
+                } else {
+                    mostrarModalDecisaoFiscal();
+                }
             }, 300);
             return;
         }
@@ -2728,8 +2733,13 @@ function selecionarPagamentoPDV(forma) {
     if (forma === 'dinheiro') {
         mostrarModalTroco();
     } else if (forma === 'pix') {
-        setTimeout(() => {
-            iniciarPixAutomaticoPDV();
+        setTimeout(async () => {
+            const ativo = await pixAutomaticoHabilitado();
+            if (ativo) {
+                iniciarPixAutomaticoPDV();
+            } else {
+                mostrarModalDecisaoFiscal();
+            }
         }, 300);
     } else if (forma === 'prazo') {
         mostrarModalClientePrazo();
@@ -2741,8 +2751,41 @@ function selecionarPagamentoPDV(forma) {
 }
 
 let intervaloConsultaPixPDV = null;
+let pixAutomaticoAtivoCache = null;
+
+async function pixAutomaticoHabilitado() {
+    if (pixAutomaticoAtivoCache !== null) {
+        return pixAutomaticoAtivoCache;
+    }
+
+    try {
+        const resp = await fetch(`${API_URL}/pix/config`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+        const data = await resp.json();
+        pixAutomaticoAtivoCache = !!(data.success && data.config?.ativo);
+        return pixAutomaticoAtivoCache;
+    } catch (err) {
+        console.error('Erro ao verificar Pix automático:', err);
+        pixAutomaticoAtivoCache = false;
+        return false;
+    }
+}
 
 async function iniciarPixAutomaticoPDV(valorPix, opcoes = {}) {
+    const ativo = await pixAutomaticoHabilitado();
+
+    if (!ativo) {
+        if (typeof opcoes.onPago === 'function') {
+            opcoes.onPago();
+        } else {
+            setTimeout(() => mostrarModalDecisaoFiscal(), 300);
+        }
+        return;
+    }
+
     const totalVenda = valorPix != null && Number(valorPix) > 0
         ? Math.round(Number(valorPix) * 100) / 100
         : obterTotalVendaPDV();

@@ -7,6 +7,60 @@ function isAdminUser() {
     }
 }
 
+function getUsernameLogado() {
+    try {
+        return JSON.parse(localStorage.getItem('user') || '{}').username || '';
+    } catch (e) {
+        return '';
+    }
+}
+
+function renderLinhaUsuario(u, inativo = false) {
+    const perfil = u.perfil || 'USUARIO';
+    let badgePerfil = 'bg-secondary';
+    let labelPerfil = 'Usuário';
+    if (perfil === 'SUPER_ADMIN') {
+        badgePerfil = 'bg-dark';
+        labelPerfil = 'SUPER ADMIN';
+    } else if (perfil === 'ADMIN') {
+        badgePerfil = 'bg-danger';
+        labelPerfil = 'ADMIN';
+    }
+
+    const acoes = u.username === getUsernameLogado()
+        ? '<span class="text-muted small">você</span>'
+        : (inativo
+            ? `
+                <button type="button" class="btn btn-sm btn-outline-success me-1" onclick="reativarUsuario(${u.id})" title="Reativar">
+                    <i class="fas fa-user-check"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removerUsuario(${u.id})" title="Excluir permanentemente">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `
+            : `
+                <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick='showModalNovoUsuario(${JSON.stringify(u)})' title="Editar">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-warning me-1" onclick="desativarUsuario(${u.id})" title="Desativar">
+                    <i class="fas fa-user-slash"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removerUsuario(${u.id})" title="Excluir permanentemente">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `);
+
+    return `
+        <tr>
+            <td>${escapeHtml(u.username)}</td>
+            <td><span class="badge ${badgePerfil}">${labelPerfil}</span></td>
+            <td>${obterBadgePermissao(u.perfil)}</td>
+            <td>${u.created_at ? formatDateTime(u.created_at) : '-'}</td>
+            <td>${acoes}</td>
+        </tr>
+    `;
+}
+
 // Load configuracoes page
 function loadConfiguracoes() {
     $.ajax({
@@ -14,18 +68,18 @@ function loadConfiguracoes() {
         method: 'GET',
         success: function(configuracoes) {
             if (isAdminUser()) {
-                $.ajax({
-                    url: `${API_URL}/auth/usuarios`,
-                    method: 'GET',
-                    success: function(usuarios) {
-                        renderConfiguracoes(configuracoes, usuarios);
-                    },
-                    error: function() {
-                        renderConfiguracoes(configuracoes, null);
-                    }
+                $.when(
+                    $.get(`${API_URL}/auth/usuarios`),
+                    $.get(`${API_URL}/auth/usuarios?status=inativos`)
+                ).done(function(ativosResp, inativosResp) {
+                    const usuarios = ativosResp[0] || [];
+                    const usuariosInativos = inativosResp[0] || [];
+                    renderConfiguracoes(configuracoes, usuarios, usuariosInativos);
+                }).fail(function() {
+                    renderConfiguracoes(configuracoes, null, null);
                 });
             } else {
-                renderConfiguracoes(configuracoes, null);
+                renderConfiguracoes(configuracoes, null, null);
             }
         },
         error: function() {
@@ -35,11 +89,8 @@ function loadConfiguracoes() {
 }
 
 // Render configuracoes
-function renderConfiguracoes(configuracoes, usuarios) {
-    let currentUsername = '';
-    try {
-        currentUsername = JSON.parse(localStorage.getItem('user') || '{}').username || '';
-    } catch (e) {}
+function renderConfiguracoes(configuracoes, usuarios, usuariosInativos) {
+    const currentUsername = getUsernameLogado();
 
     const fiscalConfigKeys = new Set([
         'nome_empresa',
@@ -130,7 +181,10 @@ function renderConfiguracoes(configuracoes, usuarios) {
                 <i class="fas fa-user-shield"></i> Usuários do sistema
             </div>
             <div class="card-body">
-                <p class="text-muted small">Apenas o administrador pode cadastrar ou remover usuários. O operador acessa o mesmo sistema, sem esta seção.</p>
+                <p class="text-muted small">
+                    Desativar bloqueia o login, mas mantém o histórico — o usuário pode ser reativado depois.
+                    Excluir remove o cadastro permanentemente do sistema.
+                </p>
                 <div class="table-responsive mb-3">
                     <table id="usuariosTable" class="table table-sm table-striped">
                         <thead>
@@ -143,42 +197,33 @@ function renderConfiguracoes(configuracoes, usuarios) {
                             </tr>
                         </thead>
                         <tbody>
-                            ${usuarios.map(u => {
-                                const perfil = u.perfil || 'USUARIO';
-                                let badgePerfil = 'bg-secondary';
-                                let labelPerfil = 'Usuário';
-                                if (perfil === 'SUPER_ADMIN') {
-                                    badgePerfil = 'bg-dark';
-                                    labelPerfil = 'SUPER ADMIN';
-                                } else if (perfil === 'ADMIN') {
-                                    badgePerfil = 'bg-danger';
-                                    labelPerfil = 'ADMIN';
-                                }
-                                return `
-                                <tr>
-                                    <td>${escapeHtml(u.username)}</td>
-                                    <td><span class="badge ${badgePerfil}">${labelPerfil}</span></td>
-                                    <td>${obterBadgePermissao(u.perfil)}</td>
-                                    <td>${u.created_at ? formatDateTime(u.created_at) : '-'}</td>
-                                    <td>
-                                        ${u.username !== JSON.parse(localStorage.getItem('user') || '{}').username ? `
-                                            <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick='showModalNovoUsuario(${JSON.stringify(u)})'>
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removerUsuario(${u.id})">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        ` : '<span class="text-muted small">você</span>'}
-                                    </td>
-                                </tr>
-                                `;
-                            }).join('')}
+                            ${usuarios.map(u => renderLinhaUsuario(u, false)).join('')}
                         </tbody>
                     </table>
                 </div>
                 <button type="button" class="btn btn-primary btn-sm" onclick="showModalNovoUsuario()">
                     <i class="fas fa-user-plus"></i> Novo usuário
                 </button>
+                ${usuariosInativos && usuariosInativos.length ? `
+                <hr class="my-3">
+                <h6 class="text-muted"><i class="fas fa-user-slash"></i> Usuários desativados</h6>
+                <div class="table-responsive">
+                    <table id="usuariosInativosTable" class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>Usuário</th>
+                                <th>Perfil</th>
+                                <th>Permissões</th>
+                                <th>Cadastro</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${usuariosInativos.map(u => renderLinhaUsuario(u, true)).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                ` : ''}
             </div>
         </div>
     ` : '';
@@ -215,12 +260,25 @@ function renderConfiguracoes(configuracoes, usuarios) {
                 <i class="fas fa-qrcode"></i> Pix Automático
             </div>
             <div class="card-body">
-                <p class="text-muted mb-2">
-                    Configure o banco/provedor que será usado para gerar QR Code Pix automático no PDV.
-                </p>
-                <button class="btn btn-success" onclick="abrirModalPixAutomatico()">
-                    <i class="fas fa-qrcode"></i> Configurar Pix Automático
-                </button>
+                <div class="form-check form-switch mb-3">
+                    <input
+                        class="form-check-input"
+                        type="checkbox"
+                        id="togglePixAutomatico"
+                        onchange="alterarPixAutomatico()"
+                    >
+                    <label class="form-check-label fw-bold" for="togglePixAutomatico">
+                        Ativar automação bancária Pix
+                    </label>
+                </div>
+                <small class="text-muted d-block mb-3">
+                    Quando ativado, o sistema gera QR Code Pix automático e confirma o pagamento sozinho.
+                </small>
+                <div id="containerBotaoPixAutomatico" style="display:none;">
+                    <button class="btn btn-success" onclick="abrirModalPixAutomatico()">
+                        <i class="fas fa-qrcode"></i> Configurar Pix Automático
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -320,6 +378,7 @@ function renderConfiguracoes(configuracoes, usuarios) {
     carregarPastaBackup();
     setupEscolherPastaListener();
     carregarImpressoraCupom();
+    carregarStatusPixAutomatico();
 }
 
 // --- PIX AUTOMÁTICO ---
@@ -728,11 +787,15 @@ function obterBadgePermissao(perfil) {
 
 async function carregarUsuarios() {
     try {
-        const resposta = await fetch('/api/usuarios', {
+        const resposta = await fetch(`${API_URL}/auth/usuarios`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
         });
+
+        if (!resposta.ok) {
+            throw new Error('Erro ao carregar usuários.');
+        }
 
         const usuarios = await resposta.json();
         renderizarUsuarios(usuarios);
@@ -744,44 +807,68 @@ async function carregarUsuarios() {
 function renderizarUsuarios(usuarios) {
     const tbody = document.querySelector('#usuariosTable tbody');
     if (!tbody) return;
+    tbody.innerHTML = usuarios.map(u => renderLinhaUsuario(u, false)).join('');
+}
 
-    tbody.innerHTML = usuarios.map(u => {
-        const perfil = u.perfil || 'USUARIO';
-        let badgePerfil = 'bg-secondary';
-        let labelPerfil = 'Usuário';
-        if (perfil === 'SUPER_ADMIN') {
-            badgePerfil = 'bg-dark';
-            labelPerfil = 'SUPER ADMIN';
-        } else if (perfil === 'ADMIN') {
-            badgePerfil = 'bg-danger';
-            labelPerfil = 'ADMIN';
+async function desativarUsuario(id) {
+    if (!confirm('Deseja desativar este usuário? Ele não poderá mais fazer login, mas poderá ser reativado depois.')) return;
+
+    try {
+        const resposta = await fetch(`${API_URL}/auth/usuarios/${id}/desativar`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+
+        const dados = await resposta.json();
+
+        if (!resposta.ok) {
+            alert(dados.erro || dados.error || 'Erro ao desativar usuário.');
+            return;
         }
-        return `
-        <tr>
-            <td>${escapeHtml(u.username)}</td>
-            <td><span class="badge ${badgePerfil}">${labelPerfil}</span></td>
-            <td>${obterBadgePermissao(u.perfil)}</td>
-            <td>${u.created_at ? formatDateTime(u.created_at) : '-'}</td>
-            <td>
-                ${u.username !== JSON.parse(localStorage.getItem('user') || '{}').username ? `
-                    <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick='showModalNovoUsuario(${JSON.stringify(u)})'>
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removerUsuario(${u.id})">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                ` : '<span class="text-muted small">você</span>'}
-            </td>
-        </tr>
-        `;
-    }).join('');
+
+        showNotification(dados.mensagem || 'Usuário desativado com sucesso.', 'success');
+        loadConfiguracoes();
+    } catch (erro) {
+        console.error('Erro ao desativar usuário:', erro);
+        alert('Erro ao desativar usuário.');
+    }
+}
+
+async function reativarUsuario(id) {
+    if (!confirm('Deseja reativar este usuário?')) return;
+
+    try {
+        const resposta = await fetch(`${API_URL}/auth/usuarios/${id}/ativar`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+
+        const dados = await resposta.json();
+
+        if (!resposta.ok) {
+            alert(dados.erro || dados.error || 'Erro ao reativar usuário.');
+            return;
+        }
+
+        showNotification(dados.mensagem || 'Usuário reativado com sucesso.', 'success');
+        loadConfiguracoes();
+    } catch (erro) {
+        console.error('Erro ao reativar usuário:', erro);
+        alert('Erro ao reativar usuário.');
+    }
 }
 
 async function removerUsuario(id) {
-    if (!confirm('Deseja realmente remover este usuário?')) return;
+    if (!confirm('ATENÇÃO: esta ação exclui o usuário permanentemente do sistema. Deseja continuar?')) return;
 
     try {
-        const resposta = await fetch(`/api/usuarios/${id}`, {
+        const resposta = await fetch(`${API_URL}/auth/usuarios/${id}`, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
@@ -792,15 +879,15 @@ async function removerUsuario(id) {
         const dados = await resposta.json();
 
         if (!resposta.ok) {
-            alert(dados.erro || 'Erro ao remover usuário.');
+            alert(dados.erro || dados.error || 'Erro ao excluir usuário.');
             return;
         }
 
-        alert('Usuário removido com sucesso.');
-        await carregarUsuarios();
+        showNotification(dados.mensagem || 'Usuário excluído com sucesso.', 'success');
+        loadConfiguracoes();
     } catch (erro) {
-        console.error('Erro ao remover usuário:', erro);
-        alert('Erro ao remover usuário.');
+        console.error('Erro ao excluir usuário:', erro);
+        alert('Erro ao excluir usuário.');
     }
 }
 
@@ -1423,5 +1510,63 @@ async function imprimirCupom() {
     } catch (err) {
         showNotification('Erro na impressão: ' + err.message, 'danger');
         console.error('Erro na impressão:', err);
+    }
+}
+
+async function carregarStatusPixAutomatico() {
+    try {
+        const resp = await fetch(`${API_URL}/pix/config`, {
+            headers: headersPixApi()
+        });
+        const data = await resp.json();
+
+        if (!data.success) return;
+
+        const ativo = data.config?.ativo === true;
+
+        $('#togglePixAutomatico').prop('checked', ativo);
+        $('#containerBotaoPixAutomatico').toggle(ativo);
+    } catch (err) {
+        console.error('Erro ao carregar Pix:', err);
+    }
+}
+
+async function alterarPixAutomatico() {
+    try {
+        const ativo = $('#togglePixAutomatico').is(':checked');
+
+        $('#containerBotaoPixAutomatico').toggle(ativo);
+
+        const respAtual = await fetch(`${API_URL}/pix/config`, {
+            headers: headersPixApi()
+        });
+        const atual = await respAtual.json();
+
+        const payload = {
+            ativo,
+            provedor: atual.config?.provedor || 'mercadopago',
+            configs: atual.config?.configs || {}
+        };
+
+        const resp = await fetch(`${API_URL}/pix/config`, {
+            method: 'POST',
+            headers: headersPixApi(),
+            body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok || !data.success) {
+            throw new Error(data.error || 'Erro ao salvar configuração Pix.');
+        }
+
+        showNotification(
+            ativo ? 'Pix automático ativado.' : 'Pix automático desativado.',
+            'success'
+        );
+    } catch (err) {
+        console.error(err);
+        showNotification('Erro ao alterar Pix automático.', 'danger');
+        carregarStatusPixAutomatico();
     }
 }

@@ -159,12 +159,32 @@ router.get('/permissoes-disponiveis', exigirAdmin, (req, res) => {
   res.json(PERMISSOES_DISPONIVEIS);
 });
 
+function filtroStatusUsuarios(status) {
+  const s = String(status || 'ativos').toLowerCase();
+  if (s === 'inativos') return 'WHERE COALESCE(ativo, 1) = 0';
+  if (s === 'todos') return '';
+  return 'WHERE COALESCE(ativo, 1) = 1';
+}
+
+function exigirSuperAdmin(req, res, next) {
+  const perfilLogado = String(req.user?.perfil || '').toUpperCase();
+  if (perfilLogado !== 'SUPER_ADMIN') {
+    return res.status(403).json({
+      erro: 'Apenas SUPER_ADMIN pode gerenciar usuários.'
+    });
+  }
+  next();
+}
+
 router.get('/usuarios', verificarToken, (req, res) => {
+  const filtro = filtroStatusUsuarios(req.query.status);
+
   db.all(
     `SELECT id, username, role, COALESCE(perfil, 'USUARIO') as perfil,
             COALESCE(pode_alterar_senhas, 0) as pode_alterar_senhas,
             COALESCE(ativo, 1) AS ativo, created_at
      FROM usuarios
+     ${filtro}
      ORDER BY username`,
     [],
     (err, usuarios) => {
@@ -199,50 +219,75 @@ router.post('/usuarios', exigirAdmin, (req, res) => {
     return res.status(403).json({ error: 'Apenas SUPER_ADMIN pode criar outros SUPER_ADMINs.' });
   }
 
-  db.get('SELECT id FROM usuarios WHERE username = ?', [username], (errBusca, existente) => {
+  db.get(
+    'SELECT id, COALESCE(ativo, 1) AS ativo FROM usuarios WHERE username = ?',
+    [username],
+    (errBusca, existente) => {
     if (errBusca) {
       return res.status(500).json({ error: 'Erro ao validar usuário.' });
     }
 
-    if (existente) {
-      return res.status(409).json({ error: 'Já existe um usuário com esse login.' });
+    if (existente && existente.ativo === 1) {
+      return res.status(409).json({ error: 'Já existe um usuário ativo com esse login.' });
     }
 
     const hash = bcrypt.hashSync(password, 10);
 
+    const finalizarCadastro = (usuarioId) => {
+
+      if (role === 'admin') {
+        return res.json({
+          id: usuarioId,
+          username,
+          role,
+          perfil,
+          pode_alterar_senhas: podeAlterarSenhas,
+          permissoes: PERMISSOES_DISPONIVEIS,
+          message: existente
+            ? 'Usuário reativado com sucesso.'
+            : 'Usuário administrador cadastrado com sucesso.'
+        });
+      }
+
+      salvarPermissoes(usuarioId, permissoes, () => {
+        res.json({
+          id: usuarioId,
+          username,
+          role,
+          perfil,
+          pode_alterar_senhas: podeAlterarSenhas,
+          permissoes,
+          message: existente
+            ? 'Usuário reativado com sucesso.'
+            : 'Usuário cadastrado com sucesso.'
+        });
+      });
+    };
+
+    if (existente && existente.ativo === 0) {
+      return db.run(
+        `UPDATE usuarios
+         SET password_hash = ?, role = ?, nome = ?, perfil = ?, pode_alterar_senhas = ?, ativo = 1
+         WHERE id = ?`,
+        [hash, role, username, perfil, podeAlterarSenhas, existente.id],
+        function (errUpdate) {
+          if (errUpdate) {
+            return res.status(500).json({ error: 'Erro ao reativar usuário.' });
+          }
+          finalizarCadastro(existente.id);
+        }
+      );
+    }
+
     db.run(
-      `INSERT INTO usuarios (username, password_hash, role, nome, perfil, pode_alterar_senhas) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO usuarios (username, password_hash, role, nome, perfil, pode_alterar_senhas, ativo) VALUES (?, ?, ?, ?, ?, ?, 1)`,
       [username, hash, role, username, perfil, podeAlterarSenhas],
       function (errInsert) {
         if (errInsert) {
           return res.status(500).json({ error: 'Erro ao cadastrar usuário.' });
         }
 
-        const usuarioId = this.lastID;
-
-        if (role === 'admin') {
-          return res.json({
-            id: usuarioId,
-            username,
-            role,
-            perfil,
-            pode_alterar_senhas: podeAlterarSenhas,
-            permissoes: PERMISSOES_DISPONIVEIS,
-            message: 'Usuário administrador cadastrado com sucesso.'
-          });
-        }
-
-        salvarPermissoes(usuarioId, permissoes, () => {
-          res.json({
-            id: usuarioId,
-            username,
-            role,
-            perfil,
-            pode_alterar_senhas: podeAlterarSenhas,
-            permissoes,
-            message: 'Usuário cadastrado com sucesso.'
-          });
-        });
+        finalizarCadastro(this.lastID);
       }
     );
   });
@@ -332,41 +377,27 @@ router.put('/usuarios/:id', exigirAdmin, (req, res) => {
   });
 });
 
-router.delete('/usuarios/:id', verificarToken, (req, res) => {
+router.patch('/usuarios/:id/desativar', verificarToken, exigirSuperAdmin, (req, res) => {
   const idUsuario = req.params.id;
   const perfilLogado = String(req.user?.perfil || '').toUpperCase();
 
-  if (perfilLogado !== 'SUPER_ADMIN') {
-    return res.status(403).json({
-      erro: 'Apenas SUPER_ADMIN pode remover usuários.'
-    });
-  }
-
   if (String(req.user.id) === String(idUsuario)) {
     return res.status(400).json({
-      erro: 'Você não pode remover seu próprio usuário.'
+      erro: 'Você não pode desativar seu próprio usuário.'
     });
   }
 
   db.run(
-    `
-    UPDATE usuarios
-    SET ativo = 0
-    WHERE id = ?
-    `,
+    `UPDATE usuarios SET ativo = 0 WHERE id = ?`,
     [idUsuario],
     function (err) {
       if (err) {
-        console.error('Erro ao remover usuário:', err);
-        return res.status(500).json({
-          erro: 'Erro ao remover usuário.'
-        });
+        console.error('Erro ao desativar usuário:', err);
+        return res.status(500).json({ erro: 'Erro ao desativar usuário.' });
       }
 
       if (this.changes === 0) {
-        return res.status(404).json({
-          erro: 'Usuário não encontrado.'
-        });
+        return res.status(404).json({ erro: 'Usuário não encontrado.' });
       }
 
       console.log(
@@ -375,10 +406,76 @@ router.delete('/usuarios/:id', verificarToken, (req, res) => {
 
       res.json({
         sucesso: true,
-        mensagem: 'Usuário removido com sucesso.'
+        mensagem: 'Usuário desativado com sucesso.'
       });
     }
   );
+});
+
+router.patch('/usuarios/:id/ativar', verificarToken, exigirSuperAdmin, (req, res) => {
+  const idUsuario = req.params.id;
+  const perfilLogado = String(req.user?.perfil || '').toUpperCase();
+
+  db.run(
+    `UPDATE usuarios SET ativo = 1 WHERE id = ?`,
+    [idUsuario],
+    function (err) {
+      if (err) {
+        console.error('Erro ao reativar usuário:', err);
+        return res.status(500).json({ erro: 'Erro ao reativar usuário.' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ erro: 'Usuário não encontrado.' });
+      }
+
+      console.log(
+        `[AUDITORIA] Usuário ${req.user.username} (perfil: ${perfilLogado}) reativou usuário ID ${idUsuario}`
+      );
+
+      res.json({
+        sucesso: true,
+        mensagem: 'Usuário reativado com sucesso.'
+      });
+    }
+  );
+});
+
+router.delete('/usuarios/:id', verificarToken, exigirSuperAdmin, (req, res) => {
+  const idUsuario = req.params.id;
+  const perfilLogado = String(req.user?.perfil || '').toUpperCase();
+
+  if (String(req.user.id) === String(idUsuario)) {
+    return res.status(400).json({
+      erro: 'Você não pode excluir seu próprio usuário.'
+    });
+  }
+
+  db.serialize(() => {
+    db.run(`DELETE FROM usuario_permissoes WHERE usuario_id = ?`, [idUsuario]);
+    db.run(`UPDATE caixa_movimentacoes SET usuario_id = NULL WHERE usuario_id = ?`, [idUsuario]);
+    db.run(`UPDATE vendas_canceladas SET usuario_id = NULL WHERE usuario_id = ?`, [idUsuario]);
+
+    db.run(`DELETE FROM usuarios WHERE id = ?`, [idUsuario], function (err) {
+      if (err) {
+        console.error('Erro ao excluir usuário:', err);
+        return res.status(500).json({ erro: 'Erro ao excluir usuário.' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ erro: 'Usuário não encontrado.' });
+      }
+
+      console.log(
+        `[AUDITORIA] Usuário ${req.user.username} (perfil: ${perfilLogado}) excluiu permanentemente usuário ID ${idUsuario}`
+      );
+
+      res.json({
+        sucesso: true,
+        mensagem: 'Usuário excluído permanentemente.'
+      });
+    });
+  });
 });
 
 // Rota para alterar senha com verificação de permissões de perfil
