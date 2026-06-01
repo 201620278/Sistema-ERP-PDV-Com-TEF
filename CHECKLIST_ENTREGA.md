@@ -1,4 +1,4 @@
-# 🚀 Checklist de Entrega - Sistema Esquinão da Economia
+# 🚀 Checklist de Entrega - Sistema CDS Sistemas
 
 ## ✅ Padronização e Limpeza Completa
 
@@ -194,7 +194,7 @@ npm run dist
 ```
 
 ### Saída
-- `dist/Esquinão-da-Economia-Setup-1.0.3-x64.exe`
+- `dist/CDS-Sistemas-Setup-1.0.3-x64.exe`
 
 ---
 

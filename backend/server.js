@@ -29,7 +29,7 @@ function getWritableStoragePath() {
       return path.join(
         process.env.PROGRAMDATA || 'C:\\ProgramData',
         'CDS Sistemas',
-        'Esquinao da Economia'
+        'CDS Sistemas'
       );
     }
   

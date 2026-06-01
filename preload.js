@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  app: 'esquinao-da-economia',
+  app: 'cds-sistemas',
 
   forcarReflow: () => ipcRenderer.send('forcar-reflow'),
 

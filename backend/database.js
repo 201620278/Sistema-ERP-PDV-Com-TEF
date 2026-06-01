@@ -146,7 +146,8 @@ function aplicarAlteracoesPosCriacao() {
     `ALTER TABLE compras_itens ADD COLUMN vendido_por_peso INTEGER DEFAULT 0`,
     `ALTER TABLE compras_itens ADD COLUMN peso_total_compra DECIMAL(10,3) DEFAULT 0`,
     `ALTER TABLE compras_itens ADD COLUMN custo_por_kg DECIMAL(10,2) DEFAULT 0`,
-    `ALTER TABLE compras_itens ADD COLUMN atualizar_preco_venda INTEGER DEFAULT 1`
+    `ALTER TABLE compras_itens ADD COLUMN atualizar_preco_venda INTEGER DEFAULT 1`,
+    `ALTER TABLE compras_itens ADD COLUMN data_validade DATE`
   ];
 
   const alteracoesVendas = [
@@ -422,6 +423,7 @@ function criarTabelas() {
         produto_id INTEGER,
         quantidade DECIMAL(10,2) NOT NULL,
         preco_unitario DECIMAL(10,2) NOT NULL,
+        data_validade DATE,
         subtotal DECIMAL(10,2) NOT NULL,
         FOREIGN KEY (compra_id) REFERENCES compras(id) ON DELETE CASCADE,
         FOREIGN KEY (produto_id) REFERENCES produtos(id)
@@ -732,7 +734,8 @@ function garantirColunasCompras() {
       !colunas.includes('margem_lucro') && `ALTER TABLE compras_itens ADD COLUMN margem_lucro DECIMAL(10,2) DEFAULT 30`,
       !colunas.includes('preco_venda_sugerido') && `ALTER TABLE compras_itens ADD COLUMN preco_venda_sugerido DECIMAL(10,2)`,
       !colunas.includes('unidade') && `ALTER TABLE compras_itens ADD COLUMN unidade TEXT`,
-      !colunas.includes('ncm') && `ALTER TABLE compras_itens ADD COLUMN ncm TEXT`
+      !colunas.includes('ncm') && `ALTER TABLE compras_itens ADD COLUMN ncm TEXT`,
+      !colunas.includes('data_validade') && `ALTER TABLE compras_itens ADD COLUMN data_validade DATE`
     ].filter(Boolean);
 
     db.serialize(() => {

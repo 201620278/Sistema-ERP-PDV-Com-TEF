@@ -226,6 +226,7 @@ function normalizeItemCompra(item = {}) {
         desconto_rateado: Number(item.desconto_rateado || 0),
         outras_despesas_rateado: Number(item.outras_despesas_rateado || 0),
         custo_unitario_final: Number(item.custo_unitario_final || custo || 0),
+        data_validade: item.data_validade || '',
         subtotal: Number((quantidade * custo).toFixed(2))
     };
 }
@@ -316,13 +317,14 @@ function renderItensCompraTabela() {
                 </label>
               </small>
             </td>
+            <td style="min-width:120px;">${item.data_validade ? formatDate(item.data_validade) : '-'}</td>
             <td>${formatCurrency(item.subtotal)}</td>
             <td>
                 <button class="btn btn-sm btn-warning me-1" onclick="editarItemCompra(${index})"><i class="fas fa-edit"></i></button>
                 <button class="btn btn-sm btn-danger" onclick="removerItemCompra(${index})"><i class="fas fa-trash"></i></button>
             </td>
         </tr>
-    `).join('') || '<tr><td colspan="8" class="text-center">Nenhum item adicionado.</td></tr>');
+    `).join('') || '<tr><td colspan="9" class="text-center">Nenhum item adicionado.</td></tr>');
     recalcularTotaisCompraNota();
     calcularParcelasCompra();
 }
@@ -370,6 +372,9 @@ function alterarProdutoItemCompra(index, produtoId) {
         if (!Number(itensCompraAtual[index].margem_lucro)) {
             itensCompraAtual[index].margem_lucro = Number(produto.lucro_percentual || 30);
         }
+        if (!itensCompraAtual[index].data_validade) {
+            itensCompraAtual[index].data_validade = produto.data_validade || '';
+        }
         recalcularLinhaCompra(index, 'custo');
         renderItensCompraTabela();
     }
@@ -382,6 +387,7 @@ function adicionarItemCompra() {
     const preco = Number($('#preco_item').val());
     const margemInput = Number($('#margem_padrao_item').val());
     const precoVendaInput = Number($('#preco_venda_item').val());
+    const dataValidade = ($('#data_validade_item').val() || '').trim();
     const margem = Number.isFinite(margemInput) ? margemInput : 30;
 
     if ((!produtoId && !descricaoLivre) || !quantidade || !preco) {
@@ -408,7 +414,8 @@ function adicionarItemCompra() {
         margem_lucro: margemFinal,
         preco_venda_sugerido: precoVenda,
         unidade: produto ? (produto.unidade || 'UN') : 'UN',
-        ncm: produto ? (produto.ncm || '') : ''
+        ncm: produto ? (produto.ncm || '') : '',
+        data_validade: dataValidade || (produto ? (produto.data_validade || '') : '')
     });
 
     itensCompraAtual.push(item);
@@ -423,6 +430,7 @@ function limparFormularioItemCompra() {
     $('#preco_item').val('');
     $('#margem_padrao_item').val('30');
     $('#preco_venda_item').val('');
+    $('#data_validade_item').val('');
     $('#codigo_barras_item').focus();
 }
 
@@ -452,6 +460,7 @@ function editarItemCompra(index) {
     $('#preco_item').val(formatNumberInput(item.preco_unitario));
     $('#margem_padrao_item').val(formatNumberInput(item.margem_lucro));
     $('#preco_venda_item').val(formatNumberInput(item.preco_venda_sugerido));
+    $('#data_validade_item').val(item.data_validade || '');
     // Recalcular para consistência
     calcularValorVendaItem();
     // Remover o item da lista
@@ -491,10 +500,28 @@ function onProdutoInput() {
         $('#produto_id_item').val(produto.id);
         $('#preco_item').val(produto.preco_compra || '');
         $('#margem_padrao_item').val(produto.lucro_percentual || 30);
+        $('#data_validade_item').val(produto.data_validade || '');
         calcularValorVendaItem();
     } else {
         $('#produto_id_item').val('');
     }
+}
+
+function preencherCamposProdutoCompra(produto) {
+    if (!produto) return;
+    $('#produto_id_item').val(produto.id);
+    $('#preco_item').val(produto.preco_compra || '');
+    $('#margem_padrao_item').val(produto.lucro_percentual || 30);
+    $('#data_validade_item').val(produto.data_validade || '');
+    calcularValorVendaItem();
+}
+
+function onProdutoSelectFormulario() {
+    const produtoId = $('#produto_id_item').val();
+    const produto = produtosCompraList.find(p => String(p.id) === String(produtoId));
+    if (!produto) return;
+    $('#codigo_barras_item').val(`${produto.codigo_barras || produto.codigo || ''} - ${produto.nome}`);
+    preencherCamposProdutoCompra(produto);
 }
 
 function onProdutoKeyDown(event) {
@@ -505,10 +532,7 @@ function onProdutoKeyDown(event) {
     const produto = findProdutoByInput(inputValue);
     if (!produto) return;
 
-    $('#produto_id_item').val(produto.id);
-    $('#preco_item').val(produto.preco_compra || '');
-    $('#margem_padrao_item').val(produto.lucro_percentual || 30);
-    calcularValorVendaItem();
+    preencherCamposProdutoCompra(produto);
     $('#codigo_barras_item').val(`${produto.codigo_barras || produto.codigo || ''} - ${produto.nome}`);
     if (parseFloat($('#quantidade_item').val()) > 0 && parseFloat($('#preco_item').val()) > 0) {
         adicionarItemCompra();
@@ -633,7 +657,7 @@ function showCompraModal() {
     </div>
 </div>
                         <div class="row g-2 align-items-end">
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label class="form-label">Código de barras / descrição rápida</label>
                                 <input type="text" class="form-control" id="codigo_barras_item" placeholder="Leitor, código ou nome" list="produtos-datalist" autocomplete="off" oninput="onProdutoInput()" onkeydown="onProdutoKeyDown(event)">
                                 <datalist id="produtos-datalist">
@@ -642,7 +666,7 @@ function showCompraModal() {
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label">Produto</label>
-                                <select class="form-control" id="produto_id_item">
+                                <select class="form-control" id="produto_id_item" onchange="onProdutoSelectFormulario()">
                                     <option value="">Selecione</option>
                                     ${produtosCompraList.map(p => `<option value="${p.id}">${escapeHtml(p.nome)}</option>`).join('')}
                                 </select>
@@ -663,6 +687,10 @@ function showCompraModal() {
                                 <label class="form-label">Valor venda</label>
                                 <input type="number" step="0.01" class="form-control" id="preco_venda_item" oninput="calcularMargemItem()">
                             </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Validade</label>
+                                <input type="date" class="form-control" id="data_validade_item">
+                            </div>
                             <div class="col-md-1">
                                 <button class="btn btn-success w-100" onclick="adicionarItemCompra()"><i class="fas fa-plus"></i></button>
                             </div>
@@ -677,13 +705,14 @@ function showCompraModal() {
                                         <th>Preço compra</th>
                                         <th>Margem %</th>
                                         <th>Venda sugerida</th>
+                                        <th>Validade</th>
                                         <th>Subtotal</th>
                                         <th></th>
                                     </tr>
                                 </thead>
                                 
                                 <tbody id="itensCompraBody"></tbody>
-                                <tfoot><tr><th colspan="6" class="text-end">Total</th><th id="totalCompra">${formatCurrency(0)}</th><th></th></tr></tfoot>
+                                <tfoot><tr><th colspan="7" class="text-end">Total</th><th id="totalCompra">${formatCurrency(0)}</th><th></th></tr></tfoot>
                             </table>
 
                             <hr>
@@ -817,7 +846,8 @@ function saveCompra() {
             vendido_por_peso: Number(item.vendido_por_peso || 0),
             peso_total_compra: Number(item.peso_total_compra || item.quantidade || 0),
             custo_por_kg: Number(item.custo_por_kg || item.preco_unitario || 0),
-            atualizar_preco_venda: Number(item.atualizar_preco_venda ?? 1)
+            atualizar_preco_venda: Number(item.atualizar_preco_venda ?? 1),
+            data_validade: item.data_validade || null
         })),
         condicao_pagamento: condicaoPagamento,
         forma_pagamento: $('#forma_pagamento').val(),
@@ -868,6 +898,7 @@ function viewCompra(id) {
                 <td>${formatCurrency(item.preco_unitario)}</td>
                 <td>${item.margem_lucro || 30}%</td>
                 <td>${formatCurrency(item.preco_venda_sugerido || 0)}</td>
+                <td>${item.data_validade ? formatDate(item.data_validade) : '-'}</td>
                 <td>${formatCurrency(item.subtotal)}</td>
             </tr>
         `).join('');
@@ -907,7 +938,7 @@ function viewCompra(id) {
                             </p>
                             <p><strong>Observação:</strong> ${escapeHtml(compra.observacao || '-')}</p>
                             <h6>Itens</h6>
-                            <table class="table table-bordered"><thead><tr><th>Produto</th><th>Qtd</th><th>Preço compra</th><th>Margem</th><th>Venda sugerida</th><th>Subtotal</th></tr></thead><tbody>${itensHtml}</tbody></table>
+                            <table class="table table-bordered"><thead><tr><th>Produto</th><th>Qtd</th><th>Preço compra</th><th>Margem</th><th>Venda sugerida</th><th>Validade</th><th>Subtotal</th></tr></thead><tbody>${itensHtml}</tbody></table>
                             <h6>Lançamentos financeiros gerados</h6>
                             <table class="table table-bordered"><thead><tr><th>Parcela</th><th>Vencimento</th><th>Status</th><th>Valor</th></tr></thead><tbody>${financeiroHtml}</tbody></table>
                         </div>

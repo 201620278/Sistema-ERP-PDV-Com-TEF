@@ -2337,7 +2337,7 @@ ${Number(item.quantidade)} x R$ ${Number(item.preco_unitario || item.preco || 0)
   margin: 0 auto;
   white-space: pre-wrap;
 ">
-        ${venda.nome_empresa || 'Esquinão da Economia'}
+        ${venda.nome_empresa || 'CDS Sistemas'}
 ${venda.endereco || ''}
 
 COMPROVANTE NÃO FISCAL

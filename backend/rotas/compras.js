@@ -258,8 +258,9 @@ function ensureProductForItem(item, callback) {
       db.run(`
         INSERT INTO produtos (
           codigo, codigo_barras, nome, unidade, preco_compra, preco_venda,
-          lucro_percentual, estoque_atual, estoque_minimo, fornecedor, ncm, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, CURRENT_TIMESTAMP)
+          lucro_percentual, estoque_atual, estoque_minimo, fornecedor, ncm,
+          data_validade, controlar_validade, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `, [
         codigo,
         item.codigo_barras || codigo,
@@ -269,7 +270,9 @@ function ensureProductForItem(item, callback) {
         Number(item.preco_venda_sugerido || item.preco_unitario || 0),
         Number(item.margem_lucro || 30),
         item.fornecedor || null,
-        item.ncm || null
+        item.ncm || null,
+        item.data_validade || null,
+        item.data_validade ? 1 : 0
       ], function(insertErr) {
         if (insertErr) return callback(insertErr);
         callback(null, this.lastID);
@@ -299,8 +302,8 @@ function processarItensCompra(compraId, itens, fornecedor, done) {
             compra_id, produto_id, quantidade, preco_unitario, subtotal,
             descricao_produto, codigo_barras, margem_lucro, preco_venda_sugerido, unidade, ncm,
             frete_rateado, desconto_rateado, outras_despesas_rateado, custo_unitario_final,
-            vendido_por_peso, peso_total_compra, custo_por_kg, atualizar_preco_venda
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            vendido_por_peso, peso_total_compra, custo_por_kg, atualizar_preco_venda, data_validade
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           compraId,
           produtoId,
@@ -320,7 +323,8 @@ function processarItensCompra(compraId, itens, fornecedor, done) {
           Number(item.vendido_por_peso || 0),
           Number(item.peso_total_compra || 0),
           Number(item.custo_por_kg || 0),
-          Number(item.atualizar_preco_venda ?? 1)
+          Number(item.atualizar_preco_venda ?? 1),
+          item.data_validade || null
         ], (insertErr) => {
           if (insertErr) return done(insertErr);
 
@@ -338,6 +342,8 @@ function processarItensCompra(compraId, itens, fornecedor, done) {
                 peso_total_compra = CASE WHEN ? = 1 THEN ? ELSE COALESCE(peso_total_compra, 0) END,
                 valor_total_compra = CASE WHEN ? = 1 THEN ? ELSE COALESCE(valor_total_compra, 0) END,
                 custo_por_kg = CASE WHEN ? = 1 THEN ? ELSE COALESCE(custo_por_kg, 0) END,
+                data_validade = CASE WHEN ? IS NOT NULL AND ? <> '' THEN ? ELSE data_validade END,
+                controlar_validade = CASE WHEN ? IS NOT NULL AND ? <> '' THEN 1 ELSE COALESCE(controlar_validade, 0) END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
           `, [
@@ -365,6 +371,13 @@ function processarItensCompra(compraId, itens, fornecedor, done) {
 
             Number(item.vendido_por_peso || 0),
             Number(item.custo_por_kg || item.custo_unitario_final || item.preco_unitario || 0),
+
+            item.data_validade || null,
+            item.data_validade || null,
+            item.data_validade || null,
+
+            item.data_validade || null,
+            item.data_validade || null,
 
             produtoId
           ], (upErr) => {
@@ -1041,6 +1054,7 @@ router.post('/parse-xml', upload.single('xml'), (req, res) => {
         itens: det.map(d => {
           const prod = d.prod;
           const imposto = d.imposto;
+          const rastro = Array.isArray(prod?.rastro) ? prod.rastro[0] : prod?.rastro;
           return {
             produto_nome: prod?.xProd || '',
             codigo_barras: prod?.cEAN || prod?.cEANTrib || '',
@@ -1050,7 +1064,8 @@ router.post('/parse-xml', upload.single('xml'), (req, res) => {
             preco_unitario: parseFloat(prod?.vUnCom || 0),
             subtotal: parseFloat(prod?.vProd || 0),
             margem_lucro: 30, // padrão
-            preco_venda_sugerido: parseFloat(prod?.vUnCom || 0) * 1.3
+            preco_venda_sugerido: parseFloat(prod?.vUnCom || 0) * 1.3,
+            data_validade: rastro?.dVal || ''
           };
         })
       };
